@@ -1,0 +1,19 @@
+services:
+  intranet:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./data:/app/data
+      - ./public/uploads:/app/public/uploads
+    environment:
+      - DATABASE_URL=file:./data/intranet.db
+    restart: always
+
+volumes:
+  data:
+  uploads:

@@ -1,0 +1,28 @@
+# Database e dati locali
+database.db
+*.db
+*.sqlite
+*.sqlite3
+data/
+volumes/
+
+# Segreti
+.env
+*.env
+!.env.example
+
+# Python / Node / varie
+__pycache__/
+*.pyc
+node_modules/
+*.log
+.DS_Store
+
+# Next.js build e dipendenze
+.next/
+out/
+node_modules/
+
+# File caricati dagli utenti
+public/uploads/*
+!public/uploads/.gitkeep
