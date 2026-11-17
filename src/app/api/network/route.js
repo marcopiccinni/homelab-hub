@@ -1,5 +1,6 @@
 import db from '../../../lib/db';
 import { NextResponse } from 'next/server';
+import { jsonError } from '../../../lib/api-error';
 
 export async function GET() {
     try {
@@ -17,7 +18,7 @@ export async function GET() {
                     hostsMap[host] = new Set();
                 }
                 hostsMap[host].add(port);
-            } catch (e) {
+            } catch {
                 // Skip invalid URLs
             }
         });
@@ -29,6 +30,6 @@ export async function GET() {
 
         return NextResponse.json(report);
     } catch (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return jsonError(500, 'Errore interno del server', 'network GET', error);
     }
 }

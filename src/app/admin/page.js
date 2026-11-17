@@ -20,6 +20,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Eye, EyeOff, Edit2, Trash2, Folder } from 'lucide-react';
+import { safeImgSrc, safeColor } from '../../lib/validation';
 
 function SortableRow({ link, handleToggleVisibility, handleEdit, handleDelete, isChild = false }) {
     const {
@@ -40,7 +41,7 @@ function SortableRow({ link, handleToggleVisibility, handleEdit, handleDelete, i
         alignItems: 'center',
         gap: '1rem',
         padding: isChild ? '0.75rem 1rem' : '1rem',
-        background: isDragging ? 'var(--md-sys-color-surface-container-high)' : (link.color ? link.color + '20' : (isChild ? 'rgba(255,255,255,0.03)' : 'var(--md-sys-color-surface-variant)')),
+        background: isDragging ? 'var(--md-sys-color-surface-container-high)' : (safeColor(link.color) ? safeColor(link.color) + '20' : (isChild ? 'rgba(255,255,255,0.03)' : 'var(--md-sys-color-surface-variant)')),
         borderRadius: isChild ? '16px' : '20px',
         border: '1px solid rgba(255,255,255,0.05)',
         boxShadow: isDragging ? '0 8px 16px rgba(0,0,0,0.3)' : 'none',
@@ -55,7 +56,7 @@ function SortableRow({ link, handleToggleVisibility, handleEdit, handleDelete, i
             </div>
 
             <img
-                src={link.icon || '/default-icon.svg'}
+                src={safeImgSrc(link.icon)}
                 width={isChild ? "32" : "44"} height={isChild ? "32" : "44"} alt=""
                 style={{ borderRadius: '10px', background: 'rgba(0,0,0,0.2)', padding: '4px', objectFit: 'contain' }}
                 onError={(e) => e.target.src = '/default-icon.svg'}
@@ -91,7 +92,7 @@ function SortableGroup({ group, childrenItems, handleToggleVisibility, handleEdi
         opacity: isDragging ? 0.5 : 1,
         zIndex: isDragging ? 999 : 'auto',
         marginBottom: '1rem',
-        background: group.color ? group.color + '20' : 'var(--md-sys-color-surface-variant)',
+        background: safeColor(group.color) ? safeColor(group.color) + '20' : 'var(--md-sys-color-surface-variant)',
         borderRadius: '24px',
         border: '1px solid rgba(255,255,255,0.05)',
         padding: '1rem',
@@ -491,10 +492,10 @@ export default function AdminPage() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                         <label style={{ fontSize: '0.8rem', opacity: 0.8 }}>Icona (URL o Upload)</label>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            {icon && <img src={icon} alt="" style={{ width: 44, height: 44, borderRadius: '8px', background: 'rgba(0,0,0,0.1)' }} />}
+                            {icon && <img src={safeImgSrc(icon)} alt="" style={{ width: 44, height: 44, borderRadius: '8px', background: 'rgba(0,0,0,0.1)' }} />}
                             <input type="text" placeholder="URL immagine (opzionale)" value={icon} onChange={(e) => setIcon(e.target.value)} style={{ flex: 1 }} />
                             <button type="button" onClick={() => fileInputRef.current.click()} style={{ padding: '0 1rem', borderRadius: '12px', background: 'var(--md-sys-color-secondary-container)', border: 'none', color: 'var(--md-sys-color-on-secondary-container)', cursor: 'pointer' }}>Upload</button>
-                            <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} accept="image/*" />
+                            <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon" />
                         </div>
                     </div>
                     )}
@@ -560,7 +561,7 @@ export default function AdminPage() {
                             ) : (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: 'var(--md-sys-color-surface-container-high)', borderRadius: '20px', boxShadow: '0 12px 24px rgba(0,0,0,0.4)', opacity: 0.9, scale: 1.02 }}>
                                     <GripVertical size={20} style={{ opacity: 0.4 }} />
-                                    <img src={activeLink?.icon || '/default-icon.svg'} width="44" height="44" alt="" style={{ borderRadius: '10px', background: 'rgba(0,0,0,0.2)', padding: '4px', objectFit: 'contain' }} />
+                                    <img src={safeImgSrc(activeLink?.icon)} width="44" height="44" alt="" style={{ borderRadius: '10px', background: 'rgba(0,0,0,0.2)', padding: '4px', objectFit: 'contain' }} />
                                     <div style={{ flex: 1 }}>
                                         <div style={{ fontWeight: 'bold' }}>{activeLink?.title}</div>
                                         <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>{activeLink?.url}</div>
@@ -577,7 +578,7 @@ export default function AdminPage() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', opacity: 0.7 }}>
                             {hiddenLinks.map((link) => (
                                 <div key={link.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '20px', border: '1px dashed rgba(255,255,255,0.1)' }}>
-                                    {link.is_folder === 1 ? <Folder size={24} color="gray" /> : <img src={link.icon || '/default-icon.svg'} width="40" height="40" alt="" style={{ borderRadius: '8px', background: 'rgba(0,0,0,0.2)', padding: '4px', filter: 'grayscale(1)', objectFit: 'contain' }} />}
+                                    {link.is_folder === 1 ? <Folder size={24} color="gray" /> : <img src={safeImgSrc(link.icon)} width="40" height="40" alt="" style={{ borderRadius: '8px', background: 'rgba(0,0,0,0.2)', padding: '4px', filter: 'grayscale(1)', objectFit: 'contain' }} />}
                                     <div style={{ flex: 1 }}>
                                         <div style={{ fontWeight: 'bold', opacity: 0.6 }}>{link.title}</div>
                                         {link.is_folder !== 1 && <div style={{ fontSize: '0.8rem', opacity: 0.4 }}>{link.url}</div>}

@@ -1,19 +1,17 @@
 services:
-  intranet:
+  homelab-hub:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
     ports:
       - "5000:3000"
     volumes:
-      - .:/app
-      - /app/node_modules
       - ./data:/app/data
       - ./public/uploads:/app/public/uploads
     environment:
+      - NODE_ENV=production
       - DATABASE_URL=file:./data/intranet.db
-    restart: always
-
-volumes:
-  data:
-  uploads:
+    restart: unless-stopped

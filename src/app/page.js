@@ -21,6 +21,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { X } from 'lucide-react';
+import { safeHref, safeImgSrc, safeColor } from '../lib/validation';
 
 function SortableItem({ link, links, onOpenFolder }) {
     const {
@@ -38,7 +39,7 @@ function SortableItem({ link, links, onOpenFolder }) {
         opacity: isDragging ? 0.5 : 1,
         zIndex: isDragging ? 999 : 'auto',
         touchAction: 'none', // Prevents scrolling while dragging on mobile
-        backgroundColor: link.color ? link.color + '20' : undefined,
+        backgroundColor: safeColor(link.color) ? safeColor(link.color) + '20' : undefined,
     };
 
     const isFolder = link.is_folder === 1;
@@ -62,14 +63,14 @@ function SortableItem({ link, links, onOpenFolder }) {
                 <div style={{ pointerEvents: isDragging ? 'none' : 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: '100%' }}>
                     <div className="folder-grid">
                         {folderItems.slice(0, 4).map(item => (
-                            <img key={item.id} src={item.icon || '/default-icon.svg'} className="folder-mini-icon" alt="" />
+                            <img key={item.id} src={safeImgSrc(item.icon)} className="folder-mini-icon" alt="" />
                         ))}
                     </div>
                     <span className="card-title">{link.title}</span>
                 </div>
             ) : (
                 <a
-                    href={link.url}
+                    href={safeHref(link.url)}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
@@ -85,7 +86,7 @@ function SortableItem({ link, links, onOpenFolder }) {
                     onClick={(e) => isDragging && e.preventDefault()}
                 >
                     <img
-                        src={link.icon || '/default-icon.svg'}
+                        src={safeImgSrc(link.icon)}
                         alt={link.title}
                         className="card-icon"
                         onError={(e) => {
@@ -242,19 +243,19 @@ export default function Dashboard() {
                         }),
                     }}>
                         {activeId ? (
-                            <div className="card" style={{ cursor: 'grabbing', scale: 1.05, backgroundColor: activeLink?.color ? activeLink.color + '20' : undefined }}>
+                            <div className="card" style={{ cursor: 'grabbing', scale: 1.05, backgroundColor: safeColor(activeLink?.color) ? safeColor(activeLink?.color) + '20' : undefined }}>
                                 {activeLink?.is_folder === 1 ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: '100%' }}>
                                         <div className="folder-grid">
                                             {links.filter(l => l.folder_id === activeLink.id).slice(0, 4).map(item => (
-                                                <img key={item.id} src={item.icon || '/default-icon.svg'} className="folder-mini-icon" alt="" />
+                                                <img key={item.id} src={safeImgSrc(item.icon)} className="folder-mini-icon" alt="" />
                                             ))}
                                         </div>
                                         <span className="card-title">{activeLink.title}</span>
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                        <img src={activeLink?.icon || '/default-icon.svg'} alt="" className="card-icon" />
+                                        <img src={safeImgSrc(activeLink?.icon)} alt="" className="card-icon" />
                                         <span className="card-title">{activeLink?.title}</span>
                                     </div>
                                 )}
@@ -305,9 +306,9 @@ export default function Dashboard() {
                                 }),
                             }}>
                                 {activeId ? (
-                                    <div className="card" style={{ cursor: 'grabbing', scale: 1.05, backgroundColor: activeLink?.color ? activeLink.color + '20' : undefined }}>
+                                    <div className="card" style={{ cursor: 'grabbing', scale: 1.05, backgroundColor: safeColor(activeLink?.color) ? safeColor(activeLink?.color) + '20' : undefined }}>
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                            <img src={activeLink?.icon || '/default-icon.svg'} alt="" className="card-icon" />
+                                            <img src={safeImgSrc(activeLink?.icon)} alt="" className="card-icon" />
                                             <span className="card-title">{activeLink?.title}</span>
                                         </div>
                                     </div>

@@ -1,49 +1,35 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { runMigrations } from './migrations/index.js';
 
-const dbPath = process.env.DATABASE_URL
-  ? process.env.DATABASE_URL.replace('file:', '')
-  : path.join(process.cwd(), 'data', 'intranet.db');
+function resolveDbPath() {
+  const raw = process.env.DATABASE_URL || 'file:./data/intranet.db';
+  let dbPath = raw.startsWith('file:') ? raw.slice('file:'.length) : raw;
+  if (!path.isAbsolute(dbPath)) {
+    dbPath = path.join(process.cwd(), dbPath);
+  }
+  return path.resolve(dbPath);
+}
 
-// Ensure data directory exists
+const dbPath = resolveDbPath();
 const dataDir = path.dirname(dbPath);
+
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
 console.log('Initializing database at:', dbPath);
 const db = new Database(dbPath);
-console.log('Database initialized successfully');
 
-// Initialize database
-db.exec(`
-  CREATE TABLE IF NOT EXISTS links (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    url TEXT,
-    icon TEXT,
-    sort_order INTEGER DEFAULT 0,
-    visible INTEGER DEFAULT 1,
-    is_folder INTEGER DEFAULT 0,
-    folder_id INTEGER DEFAULT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(folder_id) REFERENCES links(id) ON DELETE CASCADE
-  )
-`);
+try {
+  runMigrations(db, dbPath);
+} catch (err) {
+  console.error('Database migration failed:', err);
+  db.close();
+  throw err;
+}
 
-// Migrations
-const migrateColumn = (colName, defVal, type = 'INTEGER') => {
-  try {
-    db.prepare(`ALTER TABLE links ADD COLUMN ${colName} ${type} DEFAULT ${defVal}`).run();
-  } catch (e) {
-    // Column already exists or table doesn't exist yet
-  }
-};
-
-migrateColumn('visible', 1);
-migrateColumn('is_folder', 0);
-migrateColumn('folder_id', 'NULL');
-migrateColumn('color', 'NULL', 'TEXT');
+console.log('Database initialized successfully (user_version=%s)', db.pragma('user_version', { simple: true }));
 
 export default db;

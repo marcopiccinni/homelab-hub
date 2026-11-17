@@ -1,23 +1,37 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
+import { detectImageType, MAX_UPLOAD_BYTES } from '../../../lib/upload-utils';
+import { jsonError } from '../../../lib/api-error';
 
 export async function POST(request) {
     try {
         const formData = await request.formData();
         const file = formData.get('file');
 
-        if (!file) {
-            return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+        if (!file || typeof file === 'string') {
+            return jsonError(400, 'Nessun file caricato');
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
-        const extension = path.extname(file.name);
-        const fileName = `${uuidv4()}${extension}`;
+
+        if (buffer.length > MAX_UPLOAD_BYTES) {
+            return jsonError(400, 'Il file supera la dimensione massima di 2 MB');
+        }
+
+        if (buffer.length === 0) {
+            return jsonError(400, 'File vuoto');
+        }
+
+        const detected = detectImageType(buffer);
+        if (!detected) {
+            return jsonError(400, 'Tipo di immagine non consentito (consentiti: PNG, JPEG, WebP, GIF, ICO)');
+        }
+
+        const fileName = `${randomUUID()}${detected.ext}`;
         const uploadDir = path.join(process.cwd(), 'public', 'uploads');
 
-        // Ensure directory exists
         try {
             await fs.access(uploadDir);
         } catch {
@@ -29,7 +43,6 @@ export async function POST(request) {
 
         return NextResponse.json({ url: `/uploads/${fileName}` });
     } catch (error) {
-        console.error('Upload Error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return jsonError(500, 'Errore durante il caricamento', 'upload POST', error);
     }
 }
