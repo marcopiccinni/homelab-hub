@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
 export default function NetworkAnalysis() {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch('/api/network')
+        fetch('/api/network', { cache: 'no-store' })
             .then(res => res.json())
             .then(report => {
                 setData(report);
@@ -25,9 +26,9 @@ export default function NetworkAnalysis() {
                 <h1 className="title">Analisi di Rete</h1>
                 <p className="subtitle">Mappa degli host e delle porte utilizzate</p>
                 <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                    <a href="/admin" style={{ color: 'var(--md-sys-color-primary)', textDecoration: 'none' }}>← Torna Amministrazione</a>
+                    <Link href="/admin" style={{ color: 'var(--md-sys-color-primary)', textDecoration: 'none' }}>← Torna Amministrazione</Link>
                     <span style={{ opacity: 0.3 }}>|</span>
-                    <a href="/" style={{ color: 'var(--md-sys-color-primary)', textDecoration: 'none' }}>Vai Dashboard</a>
+                    <Link href="/" style={{ color: 'var(--md-sys-color-primary)', textDecoration: 'none' }}>Vai Dashboard</Link>
                 </div>
             </header>
 
@@ -70,7 +71,7 @@ export default function NetworkAnalysis() {
                         ))
                     ) : (
                         <div style={{ textAlign: 'center', padding: '4rem', opacity: 0.6 }}>
-                            Nessun host rilevato. Aggiungi dei link per iniziare l'analisi.
+                            Nessun host rilevato. Aggiungi dei link per iniziare l&apos;analisi.
                         </div>
                     )}
                 </div>

@@ -1,6 +1,6 @@
 # Homelab Hub
 
-Dashboard intranet leggera per la rete di casa (Next.js 14 + SQLite). Pensata per girare su **Raspberry Pi** (arm64) dietro Docker, con collegamenti raggruppati in cartelle, icone e analisi host/porte usati dai link.
+Dashboard intranet leggera per la rete di casa (**Next.js 16** + **React 19** + SQLite). Pensata per girare su **Raspberry Pi** (arm64) dietro Docker, con collegamenti raggruppati in cartelle, icone e analisi host/porte usati dai link.
 
 ## Avvertenza sicurezza (LAN)
 
@@ -9,6 +9,7 @@ Questa applicazione **non include ancora login o autenticazione**. È progettata
 ## Requisiti
 
 - Docker e Docker Compose
+- **Node.js 22** (LTS) per sviluppo locale; immagine Docker `node:22-alpine`
 - Porta **5000** libera sull'host (mappata alla 3000 del container)
 
 ## Avvio rapido (produzione)
@@ -23,21 +24,37 @@ Apri `http://<ip-del-pi>:5000`.
 
 ### Permessi su Raspberry Pi
 
-Il container gira come utente non-root (default **UID/GID 1000**, utente `pi`). Se `./data` o `./public/uploads` esistono già con permessi root:
+Il container gira come utente **`node`** (default **UID/GID 1000**). Se `./data` o `./public/uploads` esistono già con permessi root:
 
 ```bash
 sudo chown -R 1000:1000 ./data ./public/uploads
 ```
 
-Se usi un altro UID/GID, imposta `APP_UID` / `APP_GID` in `.env` prima di `docker compose build`.
+Se usi un altro UID/GID, imposta `APP_UID` / `APP_GID` in `.env` prima di `docker compose build` (il Dockerfile rimappa l'utente `node` con `usermod`/`groupmod`).
 
 ## Database
 
-- Percorso predefinito: `./data/intranet.db` (`DATABASE_URL=file:./data/intranet.db`)
+- Percorso predefinito: **`./data/intranet.db`** (`DATABASE_URL=file:./data/intranet.db`)
 - Modalità **WAL**, timeout busyness 5s, **foreign keys** attive dopo le migrazioni
 - **Migrazioni versionate** (`PRAGMA user_version`): alla partenza, se ci sono migrazioni in sospeso, viene creato un backup in `./data/backups/intranet-YYYYMMDD-HHMMSS.db` (mantenuti gli ultimi 10)
 
 Le migrazioni sono additive e **non cancellano** tabelle o dati esistenti.
+
+### Database legacy (`database.db` nella root del progetto)
+
+Versioni precedenti potevano usare `./database.db` invece di `./data/intranet.db`. Prima dell'aggiornamento:
+
+```bash
+docker compose down
+cp -a data data.bak.$(date +%Y%m%d)   # backup della cartella data, se esiste
+cp -a database.db database.db.bak.$(date +%Y%m%d) 2>/dev/null || true
+mkdir -p data
+# Solo se data/intranet.db non esiste o è vuoto (0 byte):
+if [ ! -s data/intranet.db ] && [ -f database.db ]; then
+  cp -a database.db data/intranet.db
+fi
+# Lascia database.db.bak originale; non cancellare database.db finché non hai verificato l'app
+```
 
 ## Sviluppo locale
 
@@ -59,14 +76,23 @@ Test migrazioni:
 npm run test:migrations
 ```
 
-## Aggiornamento dal vecchio container di sviluppo
+## Aggiornamento su Raspberry Pi
 
-1. **Backup** obbligatorio: copia `./data` (almeno `intranet.db`) in un posto sicuro.
-2. Ferma il vecchio stack: `docker compose down`.
-3. Aggiorna il repository (`git pull`).
-4. Sistemando i permessi: `sudo chown -R 1000:1000 ./data ./public/uploads`.
-5. Ricostruisci e avvia: `docker compose build --no-cache && docker compose up -d`.
-6. Al primo avvio le migrazioni aggiornano `user_version` e, se necessario, correggono `folder_id` orfani; viene creato un backup automatico se servono migrazioni nuove.
+1. **Backup** obbligatorio (vedi sopra per `data/` e eventuale `database.db`).
+2. `docker compose down`
+3. `git pull origin main`
+4. Migra il DB legacy se necessario (comandi nella sezione Database).
+5. `sudo chown -R 1000:1000 ./data ./public/uploads`
+6. `docker compose build --no-cache && docker compose up -d`
+7. Verifica: `curl -s http://localhost:5000/api/health`
+
+Al primo avvio dopo un upgrade con nuove migrazioni SQLite, viene creato un backup automatico in `data/backups/`.
+
+### Upgrade a Next.js 16 (da 14.x)
+
+- API route con `dynamic = 'force-dynamic'` (nessuna cache implicita delle GET).
+- Le fetch client verso `/api/*` usano `cache: 'no-store'`.
+- Immagine Docker: **Node 22 Alpine**; runtime come utente `node`.
 
 ## Upload icone
 

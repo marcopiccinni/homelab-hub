@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { assertSafeFetchUrl, safeFetch, readTextLimited } from '../../../lib/ssrf';
 import { jsonError } from '../../../lib/api-error';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request) {
     try {
         let { url } = await request.json();

@@ -5,11 +5,18 @@ import { runMigrations } from './migrations/index.js';
 
 function resolveDbPath() {
   const raw = process.env.DATABASE_URL || 'file:./data/intranet.db';
+  if (
+    !raw ||
+    raw === 'file:./data/intranet.db' ||
+    raw === 'file:data/intranet.db'
+  ) {
+    return path.join(process.cwd(), 'data', 'intranet.db');
+  }
   let dbPath = raw.startsWith('file:') ? raw.slice('file:'.length) : raw;
   if (!path.isAbsolute(dbPath)) {
-    dbPath = path.join(process.cwd(), dbPath);
+    dbPath = path.join(process.cwd(), 'data', path.basename(dbPath));
   }
-  return path.resolve(dbPath);
+  return path.resolve(/* turbopackIgnore: true */ dbPath);
 }
 
 const dbPath = resolveDbPath();

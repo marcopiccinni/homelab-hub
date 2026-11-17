@@ -5,6 +5,8 @@ import { randomUUID } from 'crypto';
 import { detectImageType, MAX_UPLOAD_BYTES } from '../../../lib/upload-utils';
 import { jsonError } from '../../../lib/api-error';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request) {
     try {
         const formData = await request.formData();

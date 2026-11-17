@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
+import Link from 'next/link';
 import {
     DndContext,
     closestCorners,
@@ -170,13 +171,9 @@ export default function AdminPage() {
         }), []))
     );
 
-    useEffect(() => {
-        fetchLinks();
-    }, []);
-
     const fetchLinks = async () => {
         try {
-            const res = await fetch('/api/links?all=true');
+            const res = await fetch('/api/links?all=true', { cache: 'no-store' });
             if (!res.ok) throw new Error(`Server Error (${res.status})`);
             const data = await res.json();
             setLinks(data);
@@ -187,6 +184,11 @@ export default function AdminPage() {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- client initial data load
+        fetchLinks();
+    }, []);
 
     const handleSave = async (e) => {
         e.preventDefault();
@@ -217,6 +219,7 @@ export default function AdminPage() {
                 method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
+                cache: 'no-store',
             });
             if (!res.ok) throw new Error(`Server Error`);
             resetForm();
@@ -232,6 +235,7 @@ export default function AdminPage() {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...link, visible: link.visible === 1 ? 0 : 1 }),
+            cache: 'no-store',
         });
         if (res.ok) fetchLinks();
     };
@@ -259,7 +263,7 @@ export default function AdminPage() {
 
     const handleDelete = async (id) => {
         if (confirm('Sei sicuro di voler eliminare questo elemento?')) {
-            const res = await fetch(`/api/links/${id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/links/${id}`, { method: 'DELETE', cache: 'no-store' });
             if (res.ok) fetchLinks();
         }
     };
@@ -384,6 +388,7 @@ export default function AdminPage() {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ updates }),
+                cache: 'no-store',
             });
             if (!res.ok) fetchLinks();
         } catch (e) {
@@ -401,6 +406,7 @@ export default function AdminPage() {
         const res = await fetch('/api/upload', {
             method: 'POST',
             body: formData,
+            cache: 'no-store',
         });
 
         if (res.ok) {
@@ -417,6 +423,7 @@ export default function AdminPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url }),
+                cache: 'no-store',
             });
             const data = await res.json();
             if (!data.reachable) alert('Attenzione: Il sito non sembra raggiungibile.');
@@ -439,9 +446,9 @@ export default function AdminPage() {
                 <h1 className="title">Amministrazione</h1>
                 <p className="subtitle">Gestisci i tuoi collegamenti</p>
                 <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1rem', justifyContent: 'center' }}>
-                    <a href="/" style={{ color: 'var(--md-sys-color-primary)', textDecoration: 'none' }}>← Dashboard</a>
+                    <Link href="/" style={{ color: 'var(--md-sys-color-primary)', textDecoration: 'none' }}>← Dashboard</Link>
                     <span style={{ opacity: 0.3 }}>|</span>
-                    <a href="/admin/network" style={{ color: 'var(--md-sys-color-secondary)', textDecoration: 'none', fontWeight: 'bold' }}>Analisi Rete</a>
+                    <Link href="/admin/network" style={{ color: 'var(--md-sys-color-secondary)', textDecoration: 'none', fontWeight: 'bold' }}>Analisi Rete</Link>
                 </div>
             </header>
 

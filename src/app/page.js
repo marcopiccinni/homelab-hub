@@ -159,6 +159,7 @@ export default function Dashboard() {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ updates: updatedLinks }),
+                    cache: 'no-store',
                 });
             } catch (error) {
                 console.error('Failed to reorder:', error);
@@ -169,7 +170,7 @@ export default function Dashboard() {
     useEffect(() => {
         const loadLinks = async () => {
             try {
-                const res = await fetch('/api/links');
+                const res = await fetch('/api/links', { cache: 'no-store' });
                 if (!res.ok) {
                     const text = await res.text();
                     throw new Error(`Server Error (${res.status}): ${text.substring(0, 100)}`);

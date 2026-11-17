@@ -3,9 +3,11 @@ import { NextResponse } from 'next/server';
 import { validateLinkUrl, validateIcon, validateColor } from '../../../../lib/validation';
 import { jsonError } from '../../../../lib/api-error';
 
+export const dynamic = 'force-dynamic';
+
 export async function PUT(request, { params }) {
     try {
-        const { id } = params;
+        const { id } = (await params);
         const body = await request.json();
         const { title, sort_order, visible, is_folder, folder_id } = body;
         const isFolder = is_folder ? 1 : 0;
@@ -49,7 +51,7 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
     try {
-        const { id } = params;
+        const { id } = (await params);
         db.prepare('DELETE FROM links WHERE id = ?').run(id);
         return NextResponse.json({ success: true });
     } catch (error) {

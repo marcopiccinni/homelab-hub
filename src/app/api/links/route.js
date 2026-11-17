@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { validateLinkUrl, validateIcon, validateColor } from '../../../lib/validation';
 import { jsonError } from '../../../lib/api-error';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request) {
     try {
         const { searchParams } = new URL(request.url);

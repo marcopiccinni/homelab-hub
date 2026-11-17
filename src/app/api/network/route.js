@@ -2,6 +2,8 @@ import db from '../../../lib/db';
 import { NextResponse } from 'next/server';
 import { jsonError } from '../../../lib/api-error';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
     try {
         const links = db.prepare('SELECT url FROM links').all();
