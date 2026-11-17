@@ -1,7 +1,8 @@
-import db from '../../../lib/db';
+import { getDb } from '../../../lib/db';
 import { NextResponse } from 'next/server';
 import { validateLinkUrl, validateIcon, validateColor } from '../../../lib/validation';
 import { jsonError } from '../../../lib/api-error';
+import { cacheRemoteIcon } from '../../../lib/icon-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,7 @@ export async function GET(request) {
             ? 'SELECT * FROM links ORDER BY sort_order ASC, created_at DESC'
             : 'SELECT * FROM links WHERE visible = 1 ORDER BY sort_order ASC, created_at DESC';
 
-        const links = db.prepare(query).all();
+        const links = getDb().prepare(query).all();
         return NextResponse.json(links);
     } catch (error) {
         return jsonError(500, 'Errore interno del server', 'links GET', error);
@@ -44,12 +45,18 @@ export async function POST(request) {
         const colorCheck = validateColor(body.color);
         if (!colorCheck.ok) return jsonError(400, colorCheck.error);
 
-        const info = db.prepare(
+        let iconValue = iconCheck.value;
+        if (iconValue && /^https?:\/\//i.test(iconValue)) {
+            const cached = await cacheRemoteIcon(iconValue);
+            if (cached) iconValue = cached;
+        }
+
+        const info = getDb().prepare(
             'INSERT INTO links (title, url, icon, color, sort_order, visible, is_folder, folder_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         ).run(
             title.trim(),
             urlValue,
-            iconCheck.value,
+            iconValue,
             colorCheck.value,
             sort_order || 0,
             visible ?? 1,
@@ -71,10 +78,23 @@ export async function PATCH(request) {
             return jsonError(400, 'Richiesta non valida');
         }
 
-        const transaction = db.transaction((items) => {
-            const stmt = db.prepare('UPDATE links SET sort_order = ?, folder_id = ? WHERE id = ?');
+        const transaction = getDb().transaction((items) => {
+            const stmtFull = getDb().prepare(
+                'UPDATE links SET sort_order = ?, folder_id = ? WHERE id = ?'
+            );
+            const stmtOrder = getDb().prepare(
+                'UPDATE links SET sort_order = ? WHERE id = ?'
+            );
             for (const item of items) {
-                stmt.run(item.sort_order, item.folder_id === undefined ? null : item.folder_id, item.id);
+                if (Object.prototype.hasOwnProperty.call(item, 'folder_id')) {
+                    stmtFull.run(
+                        item.sort_order,
+                        item.folder_id ?? null,
+                        item.id
+                    );
+                } else {
+                    stmtOrder.run(item.sort_order, item.id);
+                }
             }
         });
 

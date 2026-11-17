@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { detectImageType, MAX_UPLOAD_BYTES } from '../../../lib/upload-utils';
+import { optimizeIconToWebp } from '../../../lib/image-utils';
 import { jsonError } from '../../../lib/api-error';
 
 export const dynamic = 'force-dynamic';
@@ -31,7 +32,6 @@ export async function POST(request) {
             return jsonError(400, 'Tipo di immagine non consentito (consentiti: PNG, JPEG, WebP, GIF, ICO)');
         }
 
-        const fileName = `${randomUUID()}${detected.ext}`;
         const uploadDir = path.join(process.cwd(), 'public', 'uploads');
 
         try {
@@ -40,8 +40,18 @@ export async function POST(request) {
             await fs.mkdir(uploadDir, { recursive: true });
         }
 
+        let output = buffer;
+        let ext = detected.ext;
+
+        const optimized = await optimizeIconToWebp(buffer);
+        if (optimized) {
+            output = optimized.buffer;
+            ext = optimized.ext;
+        }
+
+        const fileName = `${randomUUID()}${ext}`;
         const filePath = path.join(uploadDir, fileName);
-        await fs.writeFile(filePath, buffer);
+        await fs.writeFile(filePath, output);
 
         return NextResponse.json({ url: `/uploads/${fileName}` });
     } catch (error) {

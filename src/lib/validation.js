@@ -52,7 +52,8 @@ export function safeHref(raw) {
   return '#';
 }
 
-const LOCAL_UPLOAD_PATTERN = /^\/uploads\/[a-zA-Z0-9._-]+$/;
+const LOCAL_UPLOAD_PATTERN =
+  /^\/uploads\/(?:[a-zA-Z0-9._-]+\/)*[a-zA-Z0-9._-]+$/;
 const REMOTE_ICON_PATTERN = /^https?:\/\//i;
 
 /**

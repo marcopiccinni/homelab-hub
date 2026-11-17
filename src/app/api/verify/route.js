@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { assertSafeFetchUrl, safeFetch, readTextLimited } from '../../../lib/ssrf';
 import { jsonError } from '../../../lib/api-error';
+import { cacheRemoteIcon } from '../../../lib/icon-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,10 +59,12 @@ export async function POST(request) {
                 iconUrl = `${origin}/favicon.ico`;
             }
 
+            const cachedIcon = await cacheRemoteIcon(iconUrl);
+
             return NextResponse.json({
                 reachable,
                 status: response.status,
-                iconUrl,
+                iconUrl: cachedIcon || iconUrl,
                 finalUrl,
             });
         } catch (e) {

@@ -1,7 +1,8 @@
-import db from '../../../../lib/db';
+import { getDb } from '../../../../lib/db';
 import { NextResponse } from 'next/server';
 import { validateLinkUrl, validateIcon, validateColor } from '../../../../lib/validation';
 import { jsonError } from '../../../../lib/api-error';
+import { cacheRemoteIcon } from '../../../../lib/icon-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,12 +30,18 @@ export async function PUT(request, { params }) {
         const colorCheck = validateColor(body.color);
         if (!colorCheck.ok) return jsonError(400, colorCheck.error);
 
-        db.prepare(
+        let iconValue = iconCheck.value;
+        if (iconValue && /^https?:\/\//i.test(iconValue)) {
+            const cached = await cacheRemoteIcon(iconValue);
+            if (cached) iconValue = cached;
+        }
+
+        getDb().prepare(
             'UPDATE links SET title = ?, url = ?, icon = ?, color = ?, sort_order = ?, visible = ?, is_folder = ?, folder_id = ? WHERE id = ?'
         ).run(
             title.trim(),
             urlValue,
-            iconCheck.value,
+            iconValue,
             colorCheck.value,
             sort_order,
             visible ?? 1,
@@ -52,7 +59,7 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
     try {
         const { id } = (await params);
-        db.prepare('DELETE FROM links WHERE id = ?').run(id);
+        getDb().prepare('DELETE FROM links WHERE id = ?').run(id);
         return NextResponse.json({ success: true });
     } catch (error) {
         return jsonError(500, 'Errore interno del server', 'links DELETE', error);

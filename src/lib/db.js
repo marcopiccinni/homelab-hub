@@ -19,24 +19,61 @@ function resolveDbPath() {
   return path.resolve(/* turbopackIgnore: true */ dbPath);
 }
 
-const dbPath = resolveDbPath();
-const dataDir = path.dirname(dbPath);
+let dbInstance = null;
+let initDbPath = null;
 
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+/**
+ * Lazy SQLite connection (no open at module load — safe for `next build`).
+ */
+export function getDb() {
+  if (dbInstance) {
+    return dbInstance;
+  }
+
+  const dbPath = resolveDbPath();
+  const dataDir = path.dirname(dbPath);
+
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+
+  console.log('Initializing database at:', dbPath);
+  const db = new Database(dbPath);
+
+  try {
+    runMigrations(db, dbPath);
+  } catch (err) {
+    console.error('Database migration failed:', err);
+    db.close();
+    throw err;
+  }
+
+  console.log(
+    'Database initialized successfully (user_version=%s)',
+    db.pragma('user_version', { simple: true })
+  );
+
+  dbInstance = db;
+  initDbPath = dbPath;
+  return dbInstance;
 }
 
-console.log('Initializing database at:', dbPath);
-const db = new Database(dbPath);
-
-try {
-  runMigrations(db, dbPath);
-} catch (err) {
-  console.error('Database migration failed:', err);
-  db.close();
-  throw err;
+export function getDbPath() {
+  return initDbPath ?? resolveDbPath();
 }
 
-console.log('Database initialized successfully (user_version=%s)', db.pragma('user_version', { simple: true }));
+const dbProxy = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      const db = getDb();
+      const value = db[prop];
+      if (typeof value === 'function') {
+        return value.bind(db);
+      }
+      return value;
+    },
+  }
+);
 
-export default db;
+export default dbProxy;

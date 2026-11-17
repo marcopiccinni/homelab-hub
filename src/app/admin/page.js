@@ -65,10 +65,10 @@ function SortableRow({ link, handleToggleVisibility, handleEdit, handleDelete, i
 
             <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 'bold', fontSize: isChild ? '0.9rem' : '1rem' }}>{link.title}</div>
-                <div style={{ fontSize: '0.75rem', opacity: 0.6 }}>{link.url}</div>
+                <div className="admin-row-url">{link.url}</div>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.4rem' }}>
+            <div className="admin-row-actions">
                 <button onClick={() => handleToggleVisibility(link)} title="Nascondi" style={{ background: 'rgba(255,255,255,0.05)', border: 'none', padding: '0.5rem', borderRadius: '10px', color: 'white', cursor: 'pointer' }}>
                     <EyeOff size={16} />
                 </button>
@@ -111,7 +111,7 @@ function SortableGroup({ group, childrenItems, handleToggleVisibility, handleEdi
                 <Folder size={24} color="var(--md-sys-color-primary)" />
                 <div style={{ flex: 1, fontWeight: 'bold', fontSize: '1.1rem' }}>{group.title}</div>
                 
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <div className="admin-row-actions">
                     <button onClick={() => handleToggleVisibility(group)} title="Nascondi" style={{ background: 'rgba(255,255,255,0.05)', border: 'none', padding: '0.5rem', borderRadius: '10px', color: 'white', cursor: 'pointer' }}>
                         <EyeOff size={16} />
                     </button>
@@ -159,6 +159,7 @@ export default function AdminPage() {
     const [editingId, setEditingId] = useState(null);
     const [loading, setLoading] = useState(true);
     const fileInputRef = useRef(null);
+    const formDrawerRef = useRef(null);
 
     const sensors = useSensors(
         useSensor(PointerSensor, useMemo(() => ({
@@ -188,6 +189,13 @@ export default function AdminPage() {
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- client initial data load
         fetchLinks();
+    }, []);
+
+    useEffect(() => {
+        const el = formDrawerRef.current;
+        if (el && window.matchMedia('(min-width: 769px)').matches) {
+            el.open = true;
+        }
     }, []);
 
     const handleSave = async (e) => {
@@ -375,12 +383,13 @@ export default function AdminPage() {
 
         const hidden = currentLinks.filter(l => l.visible === 0);
         const totalLinks = [...finalLinks, ...hidden];
+        const previousLinks = links;
         setLinks(totalLinks);
 
-        const updates = finalLinks.map(l => ({
-             id: l.id,
-             sort_order: l.sort_order,
-             folder_id: l.folder_id
+        const updates = finalLinks.map((l) => ({
+            id: l.id,
+            sort_order: l.sort_order,
+            folder_id: l.folder_id,
         }));
 
         try {
@@ -390,9 +399,13 @@ export default function AdminPage() {
                 body: JSON.stringify({ updates }),
                 cache: 'no-store',
             });
-            if (!res.ok) fetchLinks();
-        } catch (e) {
-            fetchLinks();
+            if (!res.ok) {
+                setLinks(previousLinks);
+                await fetchLinks();
+            }
+        } catch {
+            setLinks(previousLinks);
+            await fetchLinks();
         }
     };
 
@@ -441,22 +454,22 @@ export default function AdminPage() {
     };
 
     return (
-        <div className="container">
-            <header className="header" style={{ marginBottom: '2rem' }}>
+        <div className="container admin-page">
+            <header className="header header-once">
                 <h1 className="title">Amministrazione</h1>
                 <p className="subtitle">Gestisci i tuoi collegamenti</p>
-                <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1rem', justifyContent: 'center' }}>
-                    <Link href="/" style={{ color: 'var(--md-sys-color-primary)', textDecoration: 'none' }}>← Dashboard</Link>
-                    <span style={{ opacity: 0.3 }}>|</span>
-                    <Link href="/admin/network" style={{ color: 'var(--md-sys-color-secondary)', textDecoration: 'none', fontWeight: 'bold' }}>Analisi Rete</Link>
-                </div>
+                <nav className="admin-nav-links" aria-label="Navigazione">
+                    <Link href="/">← Dashboard</Link>
+                    <span className="nav-sep" aria-hidden="true">|</span>
+                    <Link href="/admin/network">Analisi di rete</Link>
+                </nav>
             </header>
 
-            <div style={{ backgroundColor: 'var(--md-sys-color-surface-variant)', padding: '2rem', borderRadius: '28px', marginBottom: '3rem' }}>
-                <h2 style={{ marginBottom: '1.5rem', fontSize: '1.2rem', color: 'var(--md-sys-color-primary)' }}>
-                    {editingId ? 'Modifica Elemento' : 'Aggiungi nuovo elemento'}
-                </h2>
-                <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <details ref={formDrawerRef} className="admin-form-drawer">
+                <summary>
+                    {editingId ? 'Modifica elemento' : 'Aggiungi collegamento (tocca per aprire)'}
+                </summary>
+                <form onSubmit={handleSave} className="admin-form-panel">
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                         <input 
                             type="checkbox" 
@@ -476,10 +489,10 @@ export default function AdminPage() {
                         {!isFolder && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                 <label style={{ fontSize: '0.8rem', opacity: 0.8 }}>URL</label>
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                <input type="text" placeholder="Es. google.com" value={url} onChange={(e) => setUrl(e.target.value)} style={{ flex: 1 }} />
-                                <button type="button" onClick={handleVerify} disabled={!url || loading} style={{ padding: '0 1rem', borderRadius: '12px', background: 'var(--md-sys-color-secondary-container)', border: 'none', color: 'var(--md-sys-color-on-secondary-container)', fontSize: '0.85rem', fontWeight: 'bold', opacity: (!url || loading) ? 0.5 : 1, cursor: 'pointer' }}>
-                                    {loading ? '...' : 'Verifica'}
+                            <div className="admin-url-row">
+                                <input type="text" placeholder="Es. homeassistant.local" value={url} onChange={(e) => setUrl(e.target.value)} />
+                                <button type="button" className="btn-verify" onClick={handleVerify} disabled={!url || loading}>
+                                    {loading ? '…' : 'Verifica'}
                                 </button>
                             </div>
                         </div>
@@ -498,10 +511,10 @@ export default function AdminPage() {
                     {!isFolder && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                         <label style={{ fontSize: '0.8rem', opacity: 0.8 }}>Icona (URL o Upload)</label>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            {icon && <img src={safeImgSrc(icon)} alt="" style={{ width: 44, height: 44, borderRadius: '8px', background: 'rgba(0,0,0,0.1)' }} />}
-                            <input type="text" placeholder="URL immagine (opzionale)" value={icon} onChange={(e) => setIcon(e.target.value)} style={{ flex: 1 }} />
-                            <button type="button" onClick={() => fileInputRef.current.click()} style={{ padding: '0 1rem', borderRadius: '12px', background: 'var(--md-sys-color-secondary-container)', border: 'none', color: 'var(--md-sys-color-on-secondary-container)', cursor: 'pointer' }}>Upload</button>
+                        <div className="admin-icon-row">
+                            {icon && <img src={safeImgSrc(icon)} alt="" width={44} height={44} style={{ borderRadius: '8px', background: 'rgba(0,0,0,0.1)' }} />}
+                            <input type="text" placeholder="URL immagine (opzionale)" value={icon} onChange={(e) => setIcon(e.target.value)} />
+                            <button type="button" className="btn-verify" onClick={() => fileInputRef.current.click()}>Carica</button>
                             <input type="file" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon" />
                         </div>
                     </div>
@@ -529,7 +542,7 @@ export default function AdminPage() {
                         )}
                     </div>
                 </form>
-            </div>
+            </details>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                 <DndContext
@@ -541,7 +554,7 @@ export default function AdminPage() {
                 >
                     <RootDroppable>
                         <SortableContext items={rootIds} strategy={verticalListSortingStrategy}>
-                            <h2 style={{ fontSize: '1.2rem', color: 'var(--md-sys-color-primary)', marginBottom: '1rem' }}>Link Visibili</h2>
+                            <h2 className="admin-list-title">Collegamenti visibili</h2>
                             <div style={{ display: 'flex', flexDirection: 'column', minHeight: '50px' }}>
                                 {rootLinks.map((link) => {
                                     if (link.is_folder === 1) {

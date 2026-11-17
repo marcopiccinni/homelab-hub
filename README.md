@@ -96,7 +96,35 @@ Al primo avvio dopo un upgrade con nuove migrazioni SQLite, viene creato un back
 
 ## Upload icone
 
-Le immagini caricate finiscono in `./public/uploads` (volume montato). Tipi ammessi: PNG, JPEG, WebP, GIF, ICO (max 2 MB; SVG non ammesso).
+Le immagini caricate finiscono in `./public/uploads` (volume montato). Tipi ammessi: PNG, JPEG, WebP, GIF, ICO (max 2 MB; SVG non ammesso). Al caricamento vengono **ridimensionate a max 128px** e salvate in **WebP**.
+
+### Ottimizzazione favicon e icone esistenti
+
+Dopo il deploy (o in sviluppo, con `npm ci`):
+
+```bash
+# In locale sul repository
+npm run optimize:icons
+```
+
+Sul **Raspberry Pi** (con container già avviato e volume `./public/uploads` montato):
+
+```bash
+docker compose exec homelab-hub npm run optimize:icons
+```
+
+Se `npm` non è disponibile nel container standalone:
+
+```bash
+docker compose exec homelab-hub sh -c "node scripts/optimize-favicon.mjs && node scripts/optimize-uploads.mjs"
+```
+
+Cosa fa:
+
+- **`optimize:favicon`**: da `public/favicon.png` genera `public/icons/favicon-{32,180,192,512}.{png,webp}` e aggiorna `favicon.ico` (usati da `metadata.icons` in Next.js).
+- **`optimize:uploads`**: backup in `data/backups/uploads-*`, comprime i file in `public/uploads` (stesso percorso; GIF/ICO convertiti in WebP con aggiornamento automatico del campo `links.icon` nel DB).
+
+Non committare `data/` né il database di produzione.
 
 ## Licenza
 
