@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Settings, X, Lock } from 'lucide-react';
+import { Settings, X, Rows3, Lock } from 'lucide-react';
 import { safeHref, safeImgSrc, safeColor } from '../lib/validation';
 import { badgeDisplayLabel } from '../lib/resolved-url-badge';
 import EnvironmentSelector from './EnvironmentSelector';
@@ -23,7 +23,7 @@ function EnvBadge({ badge, locked }) {
   );
 }
 
-function LinkCard({ link, links, onOpenFolder }) {
+function LinkCard({ link, links, onOpenFolder, reorderMode = false }) {
   const isFolder = link.is_folder === 1;
   const tint = safeColor(link.color);
   const cardStyle = tint ? { backgroundColor: `${tint}20` } : undefined;
@@ -31,6 +31,7 @@ function LinkCard({ link, links, onOpenFolder }) {
   const href = link.resolvedHref ? safeHref(link.resolvedHref) : '#';
   const lockTip = link.lockReason || 'Disponibile solo in rete locale';
   const sortAttr = { 'data-sort-order': link.sort_order };
+  const wiggleClass = reorderMode ? ' card-wiggle' : '';
 
   const folderItems = isFolder
     ? links
@@ -39,6 +40,33 @@ function LinkCard({ link, links, onOpenFolder }) {
     : [];
 
   if (isFolder) {
+    if (reorderMode) {
+      return (
+        <div
+          className={`card card-static${wiggleClass}`}
+          style={cardStyle}
+          data-link-title={link.title}
+          role="group"
+          aria-label={`Gruppo ${link.title} — riordina trascinando`}
+          {...sortAttr}
+        >
+          <div className="folder-grid" aria-hidden="true">
+            {folderItems.slice(0, 4).map((item) => (
+              <img
+                key={item.id}
+                src={safeImgSrc(item.icon)}
+                className="folder-mini-icon"
+                alt=""
+                width={24}
+                height={24}
+                loading="lazy"
+              />
+            ))}
+          </div>
+          <span className="card-title">{link.title}</span>
+        </div>
+      );
+    }
     return (
       <button
         type="button"
@@ -70,7 +98,7 @@ function LinkCard({ link, links, onOpenFolder }) {
   if (locked) {
     return (
       <div
-        className="card card-static card-locked"
+        className={`card card-static card-locked${wiggleClass}`}
         style={cardStyle}
         title={lockTip}
         role="group"
@@ -92,6 +120,33 @@ function LinkCard({ link, links, onOpenFolder }) {
         />
         <span className="card-title">{link.title}</span>
         <span className="card-lock-hint">{lockTip}</span>
+      </div>
+    );
+  }
+
+  if (reorderMode) {
+    return (
+      <div
+        className={`card card-static${wiggleClass}`}
+        style={cardStyle}
+        data-link-title={link.title}
+        data-locked="0"
+        data-badge={link.envBadge || ''}
+        data-resolved-href={link.resolvedHref || ''}
+        role="group"
+        aria-label={`${link.title} — trascina per riordinare`}
+        {...sortAttr}
+      >
+        <EnvBadge badge={link.envBadge} locked={false} />
+        <img
+          src={safeImgSrc(link.icon)}
+          alt=""
+          className="card-icon"
+          width={64}
+          height={64}
+          loading="lazy"
+        />
+        <span className="card-title">{link.title}</span>
       </div>
     );
   }
@@ -126,12 +181,31 @@ function LinkCard({ link, links, onOpenFolder }) {
   );
 }
 
+function ReorderToggleButton({ reorderMode, onToggle, disabled }) {
+  return (
+    <button
+      type="button"
+      className={`dashboard-reorder-toggle${reorderMode ? ' dashboard-reorder-toggle-active' : ''}`}
+      onClick={onToggle}
+      aria-pressed={reorderMode}
+      data-reorder-toggle
+      disabled={disabled}
+    >
+      <Rows3 size={18} aria-hidden="true" />
+      <span>{reorderMode ? 'Fatto' : 'Riorganizza'}</span>
+    </button>
+  );
+}
+
 function FolderModal({
   folder,
   links,
   setLinks,
   linksSnapshotRef,
+  reorderMode,
   onClose,
+  onExitReorder,
+  onToggleReorder,
 }) {
   const dialogRef = useRef(null);
   const closeRef = useRef(null);
@@ -147,9 +221,14 @@ function FolderModal({
 
   const renderCard = useCallback(
     (link) => (
-      <LinkCard link={link} links={links} onOpenFolder={() => {}} />
+      <LinkCard
+        link={link}
+        links={links}
+        onOpenFolder={() => {}}
+        reorderMode={reorderMode}
+      />
     ),
-    [links]
+    [links, reorderMode]
   );
 
   const trapFocus = useCallback((e) => {
@@ -173,7 +252,14 @@ function FolderModal({
     previousFocus.current = document.activeElement;
     closeRef.current?.focus();
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (reorderMode) {
+          onExitReorder();
+        } else {
+          onClose();
+        }
+        return;
+      }
       trapFocus(e);
     };
     document.addEventListener('keydown', onKey);
@@ -185,7 +271,7 @@ function FolderModal({
         previousFocus.current.focus();
       }
     };
-  }, [onClose, trapFocus]);
+  }, [onClose, trapFocus, reorderMode, onExitReorder]);
 
   return (
     <div className="modal-overlay" role="presentation" onClick={onClose}>
@@ -201,17 +287,26 @@ function FolderModal({
           <h2 id="folder-modal-title" className="modal-title">
             {folder.title}
           </h2>
-          <button
-            ref={closeRef}
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Chiudi finestra gruppo"
-          >
-            <X size={24} aria-hidden="true" />
-          </button>
+          <div className="modal-header-actions">
+            <ReorderToggleButton
+              reorderMode={reorderMode}
+              onToggle={onToggleReorder}
+            />
+            <button
+              ref={closeRef}
+              type="button"
+              className="modal-close"
+              onClick={onClose}
+              aria-label="Chiudi finestra gruppo"
+            >
+              <X size={24} aria-hidden="true" />
+            </button>
+          </div>
         </div>
-        <div className="grid modal-grid" data-folder-id={folder.id}>
+        <div
+          className={`grid modal-grid${reorderMode ? ' grid-reorder-mode' : ''}`}
+          data-folder-id={folder.id}
+        >
           {modalLinks.length > 0 ? (
             <DashboardSortableGrid
               items={modalLinks}
@@ -219,6 +314,7 @@ function FolderModal({
               setLinks={setLinks}
               linksSnapshotRef={linksSnapshotRef}
               renderCard={renderCard}
+              reorderMode={reorderMode}
             />
           ) : (
             <p className="empty-state">Questo gruppo è vuoto.</p>
@@ -239,10 +335,23 @@ export default function DashboardClient({
   const linksSnapshotRef = useRef(links);
   const [activeFolder, setActiveFolder] = useState(null);
   const [envPending, setEnvPending] = useState(false);
+  const [reorderMode, setReorderMode] = useState(false);
 
   useEffect(() => {
     linksSnapshotRef.current = links;
   }, [links]);
+
+  useEffect(() => {
+    if (!reorderMode) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setReorderMode(false);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [reorderMode]);
 
   const rootLinks = useMemo(
     () =>
@@ -258,21 +367,36 @@ export default function DashboardClient({
         link={link}
         links={links}
         onOpenFolder={setActiveFolder}
+        reorderMode={reorderMode}
       />
     ),
-    [links]
+    [links, reorderMode]
   );
 
+  const toggleReorder = useCallback(() => {
+    setReorderMode((v) => !v);
+  }, []);
+
   return (
-    <div className="container page-dashboard">
+    <div
+      className={`container page-dashboard${reorderMode ? ' page-dashboard-reorder' : ''}`}
+      data-reorder-mode={reorderMode ? '1' : '0'}
+    >
       <header className="header header-once">
         <h1 className="title">Homelab Hub</h1>
         <p className="subtitle">I tuoi servizi di rete, in un unico posto</p>
-        <EnvironmentSelector
-          detectedLabel={detectedLabel}
-          activeOverride={envOverride}
-          onPendingChange={setEnvPending}
-        />
+        <div className="dashboard-toolbar">
+          <ReorderToggleButton
+            reorderMode={reorderMode}
+            onToggle={toggleReorder}
+            disabled={loadError || rootLinks.length === 0}
+          />
+          <EnvironmentSelector
+            detectedLabel={detectedLabel}
+            activeOverride={envOverride}
+            onPendingChange={setEnvPending}
+          />
+        </div>
       </header>
 
       {loadError ? (
@@ -285,7 +409,7 @@ export default function DashboardClient({
       ) : (
         <main>
           <div
-            className={`grid${envPending ? ' grid-env-pending' : ''}`}
+            className={`grid${envPending ? ' grid-env-pending' : ''}${reorderMode ? ' grid-reorder-mode' : ''}`}
             aria-busy={envPending}
             data-dashboard-root
           >
@@ -296,6 +420,7 @@ export default function DashboardClient({
                 setLinks={setLinks}
                 linksSnapshotRef={linksSnapshotRef}
                 renderCard={renderCard}
+                reorderMode={reorderMode}
               />
             ) : (
               <div className="empty-dashboard">
@@ -323,6 +448,9 @@ export default function DashboardClient({
           links={links}
           setLinks={setLinks}
           linksSnapshotRef={linksSnapshotRef}
+          reorderMode={reorderMode}
+          onToggleReorder={toggleReorder}
+          onExitReorder={() => setReorderMode(false)}
           onClose={() => setActiveFolder(null)}
         />
       ) : null}

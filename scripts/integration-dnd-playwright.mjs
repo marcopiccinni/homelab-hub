@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * E2E drag-and-drop dashboard con Playwright (desktop + mobile).
+ * E2E modalità Riorganizza (Playwright).
  */
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
@@ -14,6 +14,7 @@ import { runMigrations } from '../src/lib/migrations/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
+const ARTIFACTS = '/opt/cursor/artifacts';
 let PORT = 38988;
 let BASE = `http://127.0.0.1:${PORT}`;
 
@@ -31,6 +32,7 @@ function getFreePort() {
 
 const tmpData = path.join(root, 'data', 'test-e2e-dnd');
 fs.mkdirSync(tmpData, { recursive: true });
+fs.mkdirSync(ARTIFACTS, { recursive: true });
 const dbPath = path.join(tmpData, 'intranet.db');
 if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
 
@@ -40,7 +42,8 @@ const folderId = db
   .prepare(
     `INSERT INTO links (title, url, sort_order, visible, is_folder, folder_id, access_type)
      VALUES ('Smart Home', '', 3, 1, 1, NULL, 'external')`
-  ).run().lastInsertRowid;
+  )
+  .run().lastInsertRowid;
 
 const rootRows = [
   ['Alpha', 'https://alpha.example', 0],
@@ -97,7 +100,7 @@ function dbRootOrder() {
   return rows.map((r) => r.title);
 }
 
-function dbFolderOrder(folderId) {
+function dbFolderOrder(fid) {
   const conn = new Database(dbPath, { readonly: true });
   const rows = conn
     .prepare(
@@ -105,35 +108,10 @@ function dbFolderOrder(folderId) {
        WHERE visible = 1 AND is_folder = 0 AND folder_id = ?
        ORDER BY sort_order ASC, id ASC`
     )
-    .all(folderId);
+    .all(fid);
   conn.close();
   return rows.map((r) => r.title);
 }
-
-async function dragByHandle(page, title, targetTitle) {
-  const handle = page.locator(
-    `.sortable-card-shell:has([data-link-title="${title}"]) .card-drag-handle`
-  );
-  const target = page.locator(
-    `.sortable-card-shell:has([data-link-title="${targetTitle}"])`
-  );
-  await handle.waitFor({ state: 'visible' });
-  const h = await handle.boundingBox();
-  const t = await target.boundingBox();
-  assert.ok(h && t);
-  const sx = h.x + h.width / 2;
-  const sy = h.y + h.height / 2;
-  await page.mouse.move(sx, sy);
-  await page.mouse.down();
-  await page.mouse.move(sx + 14, sy + 14, { steps: 6 });
-  await sleep(50);
-  await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 35 });
-  await sleep(80);
-  await page.mouse.up();
-  await sleep(900);
-}
-
-let child;
 
 function killPort(port) {
   try {
@@ -145,13 +123,42 @@ function killPort(port) {
   }
 }
 
+async function toggleReorder(page) {
+  await page.locator('[data-reorder-toggle]').click();
+  await sleep(200);
+}
+
+async function dragCard(page, title, targetTitle) {
+  const card = page.locator(
+    `.sortable-card-shell.reorder-active:has([data-link-title="${title}"])`
+  );
+  const target = page.locator(
+    `.sortable-card-shell.reorder-active:has([data-link-title="${targetTitle}"])`
+  );
+  await card.waitFor({ state: 'visible' });
+  const h = await card.boundingBox();
+  const t = await target.boundingBox();
+  assert.ok(h && t);
+  const sx = h.x + h.width / 2;
+  const sy = h.y + h.height / 2;
+  await page.mouse.move(sx, sy);
+  await page.mouse.down();
+  await page.mouse.move(sx + 14, sy + 14, { steps: 5 });
+  await sleep(40);
+  await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 30 });
+  await sleep(60);
+  await page.mouse.up();
+  await sleep(700);
+}
+
+let child;
+
 async function main() {
   PORT = await getFreePort();
   BASE = `http://127.0.0.1:${PORT}`;
   killPort(PORT);
   await sleep(200);
 
-  console.log('Build…');
   execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' });
 
   child = spawn('npm', ['run', 'start'], {
@@ -163,8 +170,6 @@ async function main() {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  child.stderr.on('data', (d) => process.stderr.write(d));
-  child.stdout.on('data', (d) => process.stdout.write(d));
 
   let ready = false;
   for (let i = 0; i < 60; i++) {
@@ -185,108 +190,111 @@ async function main() {
 
   const browser = await chromium.launch();
 
-  // --- Desktop ---
+  // --- Desktop 1280 ---
   const desk = await browser.newContext({
     viewport: { width: 1280, height: 800 },
     hasTouch: false,
   });
-  await desk.addCookies([
-    {
-      name: 'homelab_dnd_force',
-      value: '1',
-      url: BASE,
-    },
-  ]);
   const page = await desk.newPage();
   await page.goto(BASE, { waitUntil: 'networkidle' });
-  await page.waitForFunction(
-    () => document.querySelectorAll('.card-drag-handle').length >= 3,
-    { timeout: 15000 }
-  );
 
-  const handles = await page.locator('.card-drag-handle').count();
-  assert.ok(handles >= 3, 'handle desktop');
-  record('Desktop 1280px', 'Handle visibili', handles >= 3, String(handles));
+  const modeOff = await page.getAttribute('.page-dashboard', 'data-reorder-mode');
+  record('Desktop 1280px', 'Modalità off iniziale', modeOff === '0', modeOff);
+  assert.equal(modeOff, '0');
 
-  const before = dbRootOrder();
-  assert.deepEqual(before, ['Alpha', 'Beta', 'Gamma']);
-  record('Desktop 1280px', 'Ordine iniziale (API)', true, before.join(' > '));
-
-  await dragByHandle(page, 'Gamma', 'Alpha');
-  await sleep(600);
-  const afterDrag = dbRootOrder();
-  const reordered =
-    afterDrag[0] === 'Gamma' &&
-    afterDrag[1] === 'Alpha' &&
-    afterDrag[2] === 'Beta';
+  await toggleReorder(page);
+  const modeOn = await page.getAttribute('.page-dashboard', 'data-reorder-mode');
+  const wiggle = await page.locator('.card-wiggle').count();
   record(
     'Desktop 1280px',
-    'Drag Gamma su Alpha',
-    reordered,
-    afterDrag.join(' > ')
+    'Toggle Riorganizza attivo',
+    modeOn === '1' && wiggle >= 3,
+    `mode=${modeOn} wiggle=${wiggle}`
   );
+  assert.equal(modeOn, '1');
+  assert.ok(wiggle >= 3);
+
+  await page.screenshot({
+    path: path.join(ARTIFACTS, 'dashboard-reorder-desktop.png'),
+    fullPage: false,
+  });
+  record('Desktop 1280px', 'Screenshot desktop', true, 'dashboard-reorder-desktop.png');
+
+  const linksOff = await page.locator('a.card-link[data-link-title="Beta"]').count();
+  record('Desktop 1280px', 'Nessun link cliccabile in modalità', linksOff === 0, String(linksOff));
+  assert.equal(linksOff, 0);
+
+  assert.deepEqual(dbRootOrder(), ['Alpha', 'Beta', 'Gamma']);
+  await dragCard(page, 'Gamma', 'Alpha');
+  const afterDrag = dbRootOrder();
+  const reordered =
+    afterDrag[0] === 'Gamma' && afterDrag[1] === 'Alpha' && afterDrag[2] === 'Beta';
+  record('Desktop 1280px', 'Drag Gamma su Alpha', reordered, afterDrag.join(' > '));
   assert.ok(reordered);
 
   await page.reload({ waitUntil: 'networkidle' });
   const afterReload = dbRootOrder();
-  const persisted = afterReload[0] === 'Gamma';
   record(
     'Desktop 1280px',
-    'Ordine persistito dopo reload',
-    persisted,
+    'Ordine persistito reload',
+    afterReload[0] === 'Gamma',
     afterReload.join(' > ')
   );
-  assert.ok(persisted);
+  assert.equal(afterReload[0], 'Gamma');
+
+  await page.keyboard.press('Escape');
+  await sleep(200);
+  const afterEsc = await page.getAttribute('.page-dashboard', 'data-reorder-mode');
+  record('Desktop 1280px', 'Esc disattiva modalità', afterEsc === '0', afterEsc);
+  assert.equal(afterEsc, '0');
+
+  await page.locator('button[data-link-title="Smart Home"]').click({ timeout: 5000 });
+  await page.waitForSelector('.modal-grid');
+  await page.locator('.modal-header [data-reorder-toggle]').click();
+  await page.waitForSelector('.modal-grid .sortable-card-shell.reorder-active', {
+    timeout: 8000,
+  });
+  assert.deepEqual(dbFolderOrder(Number(folderId)), ['HA', 'NAS locked']);
+  await dragCard(page, 'NAS locked', 'HA');
+  const folderAfter = dbFolderOrder(Number(folderId));
+  record(
+    'Desktop 1280px',
+    'Drag in cartella',
+    folderAfter[0] === 'NAS locked',
+    folderAfter.join(' > ')
+  );
+  assert.equal(folderAfter[0], 'NAS locked');
+  await page.locator('.modal-close').click();
+  await sleep(200);
+  if ((await page.getAttribute('.page-dashboard', 'data-reorder-mode')) === '1') {
+    await toggleReorder(page);
+  }
 
   const betaLink = page.locator('a.card-link[data-link-title="Beta"]');
   const betaHref = await betaLink.getAttribute('href');
   assert.match(betaHref || '', /beta\.example/i);
-
-  assert.match(betaHref || '', /beta\.example/i);
-  const [newPage] = await Promise.all([
-    desk.waitForEvent('page', { timeout: 10000 }),
-    betaLink.click(),
-  ]);
-  const navUrl = newPage.url();
+  const popupPromise = desk.waitForEvent('page', { timeout: 8000 }).catch(() => null);
+  await betaLink.click();
+  const popup = await popupPromise;
   const clickOpens =
-    /beta\.example/i.test(navUrl) || /beta\.example/i.test(betaHref || '');
-  record('Desktop 1280px', 'Click Beta apre href', clickOpens, navUrl || betaHref);
-  await newPage.close().catch(() => {});
-  assert.ok(clickOpens, `nav=${navUrl}`);
-
-  await page.locator('[data-link-title="Smart Home"]').click();
-  await page.waitForSelector('.modal-grid .card-drag-handle', { timeout: 5000 });
-  const inModal = dbFolderOrder(Number(folderId));
-  assert.deepEqual(inModal, ['HA', 'NAS locked']);
-  record('Desktop 1280px', 'Cartella: ordine iniziale', true, inModal.join(' > '));
-
-  await dragByHandle(page, 'NAS locked', 'HA');
-  await sleep(600);
-  const inModalAfter = dbFolderOrder(Number(folderId));
-  const folderReordered = inModalAfter[0] === 'NAS locked';
+    /beta\.example/i.test(betaHref || '') ||
+    (popup && /beta\.example/i.test(popup.url()));
   record(
     'Desktop 1280px',
-    'Drag in cartella',
-    folderReordered,
-    inModalAfter.join(' > ')
+    'Fuori modalità: click Beta',
+    clickOpens,
+    popup?.url() || betaHref
   );
-  assert.ok(folderReordered);
+  if (popup) await popup.close().catch(() => {});
+  assert.ok(clickOpens);
 
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.locator('[data-link-title="Smart Home"]').click();
-  await page.waitForSelector('.modal-grid [data-link-title="NAS locked"]');
-  const folderReload = dbFolderOrder(Number(folderId));
-  record(
-    'Desktop 1280px',
-    'Ordine cartella persistito',
-    folderReload[0] === 'NAS locked',
-    folderReload.join(' > ')
-  );
-  assert.equal(folderReload[0], 'NAS locked');
+  const noDragOff = await page.locator('.sortable-card-shell.reorder-active').count();
+  record('Desktop 1280px', 'Fuori modalità: nessun drag shell', noDragOff === 0, String(noDragOff));
+  assert.equal(noDragOff, 0);
 
   await desk.close();
 
-  // --- Mobile ---
+  // --- Mobile 390 ---
   const iPhone = devices['iPhone 12'];
   const mob = await browser.newContext({
     ...iPhone,
@@ -295,23 +303,55 @@ async function main() {
   });
   const mpage = await mob.newPage();
   await mpage.goto(BASE, { waitUntil: 'networkidle' });
-  const mobHandles = await mpage.locator('.card-drag-handle').count();
-  record('Mobile 390px', 'Nessun handle drag', mobHandles === 0, String(mobHandles));
-  assert.equal(mobHandles, 0);
 
+  const mobOffMode = await mpage.getAttribute('.page-dashboard', 'data-reorder-mode');
+  const mobDragOff = await mpage.locator('.reorder-active').count();
   const scrollFree = await mpage.evaluate(() => {
     const grid = document.querySelector('[data-dashboard-root]');
-    if (!grid) return false;
-    const ta = getComputedStyle(grid).touchAction;
-    return ta !== 'none' && !grid.classList.contains('grid-env-pending');
+    return grid ? getComputedStyle(grid).touchAction !== 'none' : false;
   });
-  record('Mobile 390px', 'Scroll non bloccato', scrollFree, 'touch-action ok');
+  record(
+    'Mobile 390px',
+    'Off: no drag, scroll ok',
+    mobOffMode === '0' && mobDragOff === 0 && scrollFree,
+    `drag=${mobDragOff}`
+  );
+  assert.equal(mobOffMode, '0');
+  assert.equal(mobDragOff, 0);
   assert.ok(scrollFree);
+
+  await toggleReorder(mpage);
+  const mobOn = await mpage.getAttribute('.page-dashboard', 'data-reorder-mode');
+  const mobWiggle = await mpage.locator('.card-wiggle').count();
+  record(
+    'Mobile 390px',
+    'On: modalità attiva',
+    mobOn === '1' && mobWiggle >= 3,
+    `wiggle=${mobWiggle}`
+  );
+  assert.equal(mobOn, '1');
+
+  await mpage.screenshot({
+    path: path.join(ARTIFACTS, 'dashboard-reorder-mobile.png'),
+    fullPage: false,
+  });
+  record('Mobile 390px', 'Screenshot mobile', true, 'dashboard-reorder-mobile.png');
+
+  await dragCard(mpage, 'Beta', 'Alpha');
+  const mobOrder = dbRootOrder();
+  const mobReordered = mobOrder.indexOf('Beta') < mobOrder.indexOf('Alpha');
+  record('Mobile 390px', 'Touch drag Beta su Alpha', mobReordered, mobOrder.join(' > '));
+  assert.ok(mobReordered);
+
+  await mpage.keyboard.press('Escape');
+  const mobEsc = await mpage.getAttribute('.page-dashboard', 'data-reorder-mode');
+  record('Mobile 390px', 'Esc esce', mobEsc === '0', mobEsc);
+  assert.equal(mobEsc, '0');
 
   await mob.close();
   await browser.close();
 
-  console.log('\n=== Tabella risultati Playwright DnD ===');
+  console.log('\n=== Tabella risultati Playwright Riorganizza ===');
   console.table(results);
 
   child.kill('SIGTERM');

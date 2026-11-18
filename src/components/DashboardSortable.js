@@ -7,6 +7,7 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
@@ -17,16 +18,14 @@ import {
   rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical } from 'lucide-react';
-import { useFinePointerDnD } from '../hooks/useFinePointerDnD';
 import {
   patchUpdatesForContainer,
   reorderLinksInContainer,
 } from '../lib/dashboard-reorder';
 
-const POINTER_DISTANCE = 8;
+const POINTER_DISTANCE = 6;
 
-function SortableShell({ id, dragEnabled, children }) {
+function SortableShell({ id, reorderMode, children }) {
   const {
     attributes,
     listeners,
@@ -34,7 +33,7 @@ function SortableShell({ id, dragEnabled, children }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id, disabled: !dragEnabled });
+  } = useSortable({ id, disabled: !reorderMode });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -45,20 +44,10 @@ function SortableShell({ id, dragEnabled, children }) {
     <div
       ref={setNodeRef}
       style={style}
-      className={`sortable-card-shell${isDragging ? ' is-dragging' : ''}`}
+      className={`sortable-card-shell${reorderMode ? ' reorder-active' : ''}${isDragging ? ' is-dragging' : ''}`}
       data-sortable-id={id}
+      {...(reorderMode ? { ...attributes, ...listeners } : {})}
     >
-      {dragEnabled ? (
-        <button
-          type="button"
-          className="card-drag-handle"
-          aria-label="Trascina per riordinare"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical size={16} aria-hidden="true" />
-        </button>
-      ) : null}
       {children}
     </div>
   );
@@ -87,13 +76,16 @@ export function DashboardSortableGrid({
   setLinks,
   linksSnapshotRef,
   renderCard,
+  reorderMode = false,
 }) {
-  const dragEnabled = useFinePointerDnD();
   const [activeId, setActiveId] = useState(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: POINTER_DISTANCE },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 150, tolerance: 5 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -125,7 +117,7 @@ export function DashboardSortableGrid({
     [containerId, setLinks, linksSnapshotRef]
   );
 
-  if (!dragEnabled) {
+  if (!reorderMode) {
     return (
       <>
         {items.map((link) => (
@@ -150,7 +142,11 @@ export function DashboardSortableGrid({
     >
       <SortableContext items={ids} strategy={rectSortingStrategy}>
         {items.map((link) => (
-          <SortableShell key={link.id} id={link.id} dragEnabled={dragEnabled}>
+          <SortableShell
+            key={link.id}
+            id={link.id}
+            reorderMode={reorderMode}
+          >
             {renderCard(link)}
           </SortableShell>
         ))}
