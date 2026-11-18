@@ -9,7 +9,7 @@ Questa applicazione **non include ancora login o autenticazione**. È progettata
 ## Requisiti
 
 - Docker e Docker Compose
-- **Node.js 22** (LTS) per sviluppo locale; immagine Docker `node:22-alpine`
+- **Node.js 22** (LTS) per sviluppo locale; immagine Docker `node:22-bookworm-slim` (build rapida su arm64)
 - Porta **5000** libera sull'host (mappata alla 3000 del container)
 
 ## Avvio rapido (produzione)

@@ -1,41 +1,44 @@
 # syntax=docker/dockerfile:1
-# Platform: linux/arm64 (Raspberry Pi) and linux/amd64
+# Ottimizzato per build native arm64 (Raspberry Pi): glibc + binari precompilati.
 
-FROM node:22-alpine AS deps
-RUN apk add --no-cache libc6-compat python3 make g++ sqlite-dev
+FROM node:22-bookworm-slim AS deps
 WORKDIR /app
+# Toolchain solo in deps: fallback se npm deve compilare moduli nativi (raro con prebuild arm64).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
-FROM node:22-alpine AS builder
-RUN apk add --no-cache libc6-compat python3 make g++ sqlite-dev
+FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
 COPY . .
 RUN test -d node_modules/better-sqlite3 \
+  && test -d node_modules/sharp \
   && test -f src/lib/migrations/backup-cli.cjs
 ENV NEXT_TELEMETRY_DISABLED=1
-# Build must not require a live DB (lazy getDb at runtime only)
 ENV NEXT_PHASE=phase-production-build
 RUN npm run build
 RUN test -f .next/standalone/server.js \
-  && test -d .next/standalone/node_modules/better-sqlite3
+  && test -d .next/standalone/node_modules/better-sqlite3 \
+  && test -d .next/standalone/node_modules/sharp
 
-FROM node:22-alpine AS runner
-RUN apk add --no-cache libc6-compat sqlite-libs
+FROM node:22-bookworm-slim AS runner
 
 ARG APP_UID=1000
 ARG APP_GID=1000
 
-# node:22-alpine already has user `node` at uid/gid 1000 — do not addgroup/adduser.
+# Immagine ufficiale Node: utente `node` (di solito uid/gid 1000).
 RUN set -eux; \
     if [ "$APP_UID" != "1000" ] || [ "$APP_GID" != "1000" ]; then \
-      apk add --no-cache shadow; \
       if getent passwd "$APP_UID" | grep -qv '^node:'; then \
-        echo "ERROR: UID ${APP_UID} already in use" >&2; exit 1; \
+        echo "ERROR: UID ${APP_UID} già in uso" >&2; exit 1; \
       fi; \
       if getent group "$APP_GID" | grep -qv '^node:'; then \
-        echo "ERROR: GID ${APP_GID} already in use" >&2; exit 1; \
+        echo "ERROR: GID ${APP_GID} già in uso" >&2; exit 1; \
       fi; \
       groupmod -o -g "$APP_GID" node; \
       usermod -o -u "$APP_UID" -g "$APP_GID" node; \
