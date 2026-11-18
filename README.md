@@ -157,9 +157,11 @@ Il server deduce l’ambiente dal header **`Host`** (o **`X-Forwarded-Host`** di
 
 Nella dashboard, un chip in header mostra l’ambiente rilevato; puoi forzarlo (**Auto / Esterno / Locale / IP / VPN**) con un override salvato in cookie.
 
-### Migrazione 003
+### Migrazioni 003–004
 
 All’avvio, la migrazione **003** aggiunge le colonne URL multipli e **copia** l’`url` legacy nel campo coerente (euristica su IP/FQDN locale/esterno), **senza modificare** la colonna `url` originale (rimane fallback).
+
+La migrazione **004** corregge i record con `url_external` valorizzato ma `access_type` ancora `local_only`/`vpn_only` (dedotti dalla 003): diventano `local_exposed` o `external`. In modalità **Esterno**, se esiste `url_external` il link non viene mai bloccato.
 
 ### Test
 

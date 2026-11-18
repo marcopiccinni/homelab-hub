@@ -72,6 +72,10 @@ function LinkCard({ link, links, onOpenFolder }) {
         title={lockTip}
         role="group"
         aria-label={`${link.title} — ${lockTip}`}
+        data-link-title={link.title}
+        data-locked="1"
+        data-badge=""
+        data-resolved-href=""
       >
         <EnvBadge locked badge={link.envBadge} />
         <img
@@ -95,6 +99,10 @@ function LinkCard({ link, links, onOpenFolder }) {
       rel="noopener noreferrer"
       className="card card-static card-link"
       style={cardStyle}
+      data-link-title={link.title}
+      data-locked="0"
+      data-badge={link.envBadge || ''}
+      data-resolved-href={link.resolvedHref || ''}
     >
       <EnvBadge badge={link.envBadge} locked={false} />
       <img

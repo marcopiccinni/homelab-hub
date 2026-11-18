@@ -128,7 +128,11 @@ export function resolveLinkForViewer(link, viewerEnv) {
   let lockReason = null;
 
   if (viewerEnv === 'external') {
-    if (access === 'local_only' || access === 'vpn_only') {
+    const hasPublishedExternal = Boolean(firstUrl(link.url_external));
+    if (
+      (access === 'local_only' || access === 'vpn_only') &&
+      !hasPublishedExternal
+    ) {
       return {
         href: null,
         locked: true,

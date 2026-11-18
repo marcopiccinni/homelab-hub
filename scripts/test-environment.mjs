@@ -97,6 +97,19 @@ const lockedExt = resolveLinkForViewer(localLink, 'external');
 assert.equal(lockedExt.locked, true);
 assert.equal(lockedExt.badge, null);
 
+const haMixed = {
+  is_folder: 0,
+  access_type: 'local_only',
+  url_external: 'https://ha.example.com',
+  url_ip: 'http://192.168.1.10:8123',
+  url_local_fqdn: null,
+  url: 'http://192.168.1.10:8123',
+};
+const haExternal = resolveLinkForViewer(haMixed, 'external');
+assert.equal(haExternal.locked, false);
+assert.equal(haExternal.href, 'https://ha.example.com');
+assert.equal(haExternal.badge, 'web');
+
 // --- Migrazione 003 preserva url legacy ---
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'homelab-env-'));
 const dbPath = path.join(tmp, 'intranet.db');
@@ -124,7 +137,7 @@ db.close();
 const live = new Database(dbPath);
 runMigrations(live, dbPath);
 const row = live.prepare('SELECT url, url_ip, access_type FROM links WHERE id=1').get();
-assert.equal(live.pragma('user_version', { simple: true }), 3);
+assert.equal(live.pragma('user_version', { simple: true }), 4);
 assert.equal(row.url, urlBefore);
 assert.equal(row.url_ip, 'http://192.168.0.5:8080');
 assert.equal(row.access_type, 'local_only');

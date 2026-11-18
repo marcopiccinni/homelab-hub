@@ -525,6 +525,22 @@ export default function AdminPage() {
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                     <label style={{ fontSize: '0.8rem', opacity: 0.8 }}>URL esterno</label>
+                                    {!isFolder &&
+                                    urlExternal.trim() &&
+                                    (accessType === 'local_only' || accessType === 'vpn_only') ? (
+                                        <p
+                                            className="admin-hint-warn"
+                                            role="status"
+                                            style={{
+                                                margin: 0,
+                                                fontSize: '0.8rem',
+                                                color: '#ffb74d',
+                                            }}
+                                        >
+                                            Con un URL esterno la risorsa resterà raggiungibile in modalità Esterno.
+                                            Valuta &quot;Locale esposta&quot; o &quot;Esterna&quot; per coerenza.
+                                        </p>
+                                    ) : null}
                                     <div className="admin-url-row">
                                         <input type="text" placeholder="https://esempio.com" value={urlExternal} onChange={(e) => setUrlExternal(e.target.value)} />
                                         <button type="button" className="btn-verify" onClick={() => handleVerify('external')} disabled={!urlExternal || loading}>

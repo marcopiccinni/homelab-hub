@@ -24,5 +24,6 @@ out/
 node_modules/
 
 # File caricati dagli utenti
+data/test-e2e-integration/
 public/uploads/*
 !public/uploads/.gitkeep

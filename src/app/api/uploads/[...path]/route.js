@@ -51,7 +51,7 @@ export async function GET(_request, { params }) {
     return new NextResponse('Not found', { status: 404 });
   }
 
-  const data = await fs.readFile(filePath);
+  const data = await fs.readFile(/* turbopackIgnore: true */ filePath);
   const ext = path.extname(filePath).toLowerCase();
   const contentType = MIME_BY_EXT[ext] ?? 'application/octet-stream';
 
