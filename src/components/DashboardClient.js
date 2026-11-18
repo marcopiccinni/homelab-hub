@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Settings, X, Rows3, Lock } from 'lucide-react';
+import { Settings, X, Rows3, Lock, Check } from 'lucide-react';
 import { safeHref, safeImgSrc, safeColor } from '../lib/validation';
 import { badgeDisplayLabel } from '../lib/resolved-url-badge';
 import EnvironmentSelector from './EnvironmentSelector';
@@ -181,18 +181,51 @@ function LinkCard({ link, links, onOpenFolder, reorderMode = false }) {
   );
 }
 
-function ReorderToggleButton({ reorderMode, onToggle, disabled }) {
+function ReorderToggleButton({
+  reorderMode,
+  onToggle,
+  disabled,
+  variant = 'fab',
+}) {
+  const label = reorderMode ? 'Fatto' : 'Riorganizza';
+  if (variant === 'inline') {
+    return (
+      <button
+        type="button"
+        className={`dashboard-reorder-toggle${reorderMode ? ' dashboard-reorder-toggle-active' : ''}`}
+        onClick={onToggle}
+        aria-pressed={reorderMode}
+        aria-label={label}
+        title={label}
+        data-reorder-toggle
+        disabled={disabled}
+      >
+        {reorderMode ? (
+          <Check size={18} aria-hidden="true" />
+        ) : (
+          <Rows3 size={18} aria-hidden="true" />
+        )}
+        <span className="sr-only">{label}</span>
+      </button>
+    );
+  }
   return (
     <button
       type="button"
-      className={`dashboard-reorder-toggle${reorderMode ? ' dashboard-reorder-toggle-active' : ''}`}
+      className={`dashboard-reorder-fab${reorderMode ? ' dashboard-reorder-fab-active' : ''}`}
       onClick={onToggle}
       aria-pressed={reorderMode}
+      aria-label={label}
+      title={label}
       data-reorder-toggle
       disabled={disabled}
     >
-      <Rows3 size={18} aria-hidden="true" />
-      <span>{reorderMode ? 'Fatto' : 'Riorganizza'}</span>
+      {reorderMode ? (
+        <Check size={28} aria-hidden="true" />
+      ) : (
+        <Rows3 size={28} aria-hidden="true" />
+      )}
+      <span className="sr-only">{label}</span>
     </button>
   );
 }
@@ -289,6 +322,7 @@ function FolderModal({
           </h2>
           <div className="modal-header-actions">
             <ReorderToggleButton
+              variant="inline"
               reorderMode={reorderMode}
               onToggle={onToggleReorder}
             />
@@ -386,11 +420,6 @@ export default function DashboardClient({
         <h1 className="title">Homelab Hub</h1>
         <p className="subtitle">I tuoi servizi di rete, in un unico posto</p>
         <div className="dashboard-toolbar">
-          <ReorderToggleButton
-            reorderMode={reorderMode}
-            onToggle={toggleReorder}
-            disabled={loadError || rootLinks.length === 0}
-          />
           <EnvironmentSelector
             detectedLabel={detectedLabel}
             activeOverride={envOverride}
@@ -434,13 +463,21 @@ export default function DashboardClient({
         </main>
       )}
 
-      <Link
-        href="/admin"
-        className="admin-fab"
-        aria-label="Vai all'amministrazione"
-      >
-        <Settings size={28} aria-hidden="true" />
-      </Link>
+      <div className="dashboard-fab-cluster">
+        <Link
+          href="/admin"
+          className="admin-fab"
+          aria-label="Vai all'amministrazione"
+          title="Amministrazione"
+        >
+          <Settings size={28} aria-hidden="true" />
+        </Link>
+        <ReorderToggleButton
+          reorderMode={reorderMode}
+          onToggle={toggleReorder}
+          disabled={loadError || rootLinks.length === 0}
+        />
+      </div>
 
       {activeFolder ? (
         <FolderModal

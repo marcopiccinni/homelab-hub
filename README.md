@@ -157,7 +157,7 @@ Il server deduce l’ambiente dal header **`Host`** (o **`X-Forwarded-Host`** di
 
 Nella dashboard, un chip in header mostra l’ambiente rilevato; puoi forzarlo (**Auto / Esterno / Locale / IP / VPN**) con un override salvato in cookie.
 
-Usa **Riorganizza** nell’header per entrare nella modalità riordino: le card oscillano leggermente, si trascinano (anche da mobile con press breve), il click non apre i link; **Fatto** o **Esc** esce. Fuori da questa modalità, tap/click aprono i link normalmente.
+Usa il pulsante **Riorganizza** (FAB in basso a destra, accanto all’ingranaggio) per entrare nella modalità riordino: le card oscillano leggermente, si trascinano (anche da mobile con press breve), il click non apre i link; **Fatto** o **Esc** esce. Fuori da questa modalità, tap/click aprono i link normalmente.
 
 ### Migrazioni 003–004
 

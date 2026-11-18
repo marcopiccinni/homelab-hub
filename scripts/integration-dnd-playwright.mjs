@@ -123,9 +123,29 @@ function killPort(port) {
   }
 }
 
-async function toggleReorder(page) {
-  await page.locator('[data-reorder-toggle]').click();
+async function toggleReorder(page, scope = 'main') {
+  const sel =
+    scope === 'modal'
+      ? '.modal-header [data-reorder-toggle]'
+      : '.dashboard-fab-cluster [data-reorder-toggle]';
+  await page.locator(sel).click();
   await sleep(200);
+}
+
+async function fabClusterClearsCards(page) {
+  return page.evaluate(() => {
+    const fab = document.querySelector('.dashboard-fab-cluster');
+    const grid = document.querySelector('[data-dashboard-root]');
+    if (!fab || !grid) return false;
+    const fr = fab.getBoundingClientRect();
+    const cards = grid.querySelectorAll('.card, .sortable-card-shell > .card, .sortable-card-shell > a.card, .sortable-card-shell > button.card, .sortable-card-shell > div.card');
+    let maxBottom = grid.getBoundingClientRect().top;
+    cards.forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.bottom > maxBottom) maxBottom = r.bottom;
+    });
+    return maxBottom <= fr.top - 4;
+  });
 }
 
 async function dragCard(page, title, targetTitle) {
@@ -202,6 +222,17 @@ async function main() {
   record('Desktop 1280px', 'Modalità off iniziale', modeOff === '0', modeOff);
   assert.equal(modeOff, '0');
 
+  await page.locator('.dashboard-fab-cluster [data-reorder-toggle]').waitFor();
+  const deskClear = await fabClusterClearsCards(page);
+  record('Desktop 1280px', 'FAB non copre card', deskClear, String(deskClear));
+  assert.ok(deskClear);
+
+  await page.screenshot({
+    path: path.join(ARTIFACTS, 'dashboard-fab-desktop.png'),
+    fullPage: false,
+  });
+  record('Desktop 1280px', 'Screenshot fab off', true, 'dashboard-fab-desktop.png');
+
   await toggleReorder(page);
   const modeOn = await page.getAttribute('.page-dashboard', 'data-reorder-mode');
   const wiggle = await page.locator('.card-wiggle').count();
@@ -213,12 +244,6 @@ async function main() {
   );
   assert.equal(modeOn, '1');
   assert.ok(wiggle >= 3);
-
-  await page.screenshot({
-    path: path.join(ARTIFACTS, 'dashboard-reorder-desktop.png'),
-    fullPage: false,
-  });
-  record('Desktop 1280px', 'Screenshot desktop', true, 'dashboard-reorder-desktop.png');
 
   const linksOff = await page.locator('a.card-link[data-link-title="Beta"]').count();
   record('Desktop 1280px', 'Nessun link cliccabile in modalità', linksOff === 0, String(linksOff));
@@ -250,7 +275,7 @@ async function main() {
 
   await page.locator('button[data-link-title="Smart Home"]').click({ timeout: 5000 });
   await page.waitForSelector('.modal-grid');
-  await page.locator('.modal-header [data-reorder-toggle]').click();
+  await toggleReorder(page, 'modal');
   await page.waitForSelector('.modal-grid .sortable-card-shell.reorder-active', {
     timeout: 8000,
   });
@@ -305,6 +330,16 @@ async function main() {
   await mpage.goto(BASE, { waitUntil: 'networkidle' });
 
   const mobOffMode = await mpage.getAttribute('.page-dashboard', 'data-reorder-mode');
+  const mobClear = await fabClusterClearsCards(mpage);
+  record('Mobile 390px', 'FAB non copre card (off)', mobClear, String(mobClear));
+  assert.ok(mobClear);
+
+  await mpage.screenshot({
+    path: path.join(ARTIFACTS, 'dashboard-fab-mobile.png'),
+    fullPage: false,
+  });
+  record('Mobile 390px', 'Screenshot fab off', true, 'dashboard-fab-mobile.png');
+
   const mobDragOff = await mpage.locator('.reorder-active').count();
   const scrollFree = await mpage.evaluate(() => {
     const grid = document.querySelector('[data-dashboard-root]');
@@ -332,10 +367,10 @@ async function main() {
   assert.equal(mobOn, '1');
 
   await mpage.screenshot({
-    path: path.join(ARTIFACTS, 'dashboard-reorder-mobile.png'),
+    path: path.join(ARTIFACTS, 'dashboard-fab-mobile-on.png'),
     fullPage: false,
   });
-  record('Mobile 390px', 'Screenshot mobile', true, 'dashboard-reorder-mobile.png');
+  record('Mobile 390px', 'Screenshot fab on', true, 'dashboard-fab-mobile-on.png');
 
   await dragCard(mpage, 'Beta', 'Alpha');
   const mobOrder = dbRootOrder();
