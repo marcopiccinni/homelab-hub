@@ -23,6 +23,15 @@ function EnvBadge({ badge, locked }) {
   );
 }
 
+function CardMain({ title, children }) {
+  return (
+    <div className="card-main">
+      {children}
+      <span className="card-title">{title}</span>
+    </div>
+  );
+}
+
 function LinkCard({ link, links, onOpenFolder, reorderMode = false }) {
   const isFolder = link.is_folder === 1;
   const tint = safeColor(link.color);
@@ -50,20 +59,21 @@ function LinkCard({ link, links, onOpenFolder, reorderMode = false }) {
           aria-label={`Gruppo ${link.title} — riordina trascinando`}
           {...sortAttr}
         >
-          <div className="folder-grid" aria-hidden="true">
-            {folderItems.slice(0, 4).map((item) => (
-              <img
-                key={item.id}
-                src={safeImgSrc(item.icon)}
-                className="folder-mini-icon"
-                alt=""
-                width={24}
-                height={24}
-                loading="lazy"
-              />
-            ))}
-          </div>
-          <span className="card-title">{link.title}</span>
+          <CardMain title={link.title}>
+            <div className="folder-grid" aria-hidden="true">
+              {folderItems.slice(0, 4).map((item) => (
+                <img
+                  key={item.id}
+                  src={safeImgSrc(item.icon)}
+                  className="folder-mini-icon"
+                  alt=""
+                  width={24}
+                  height={24}
+                  loading="lazy"
+                />
+              ))}
+            </div>
+          </CardMain>
         </div>
       );
     }
@@ -77,20 +87,21 @@ function LinkCard({ link, links, onOpenFolder, reorderMode = false }) {
         data-link-title={link.title}
         {...sortAttr}
       >
-        <div className="folder-grid" aria-hidden="true">
-          {folderItems.slice(0, 4).map((item) => (
-            <img
-              key={item.id}
-              src={safeImgSrc(item.icon)}
-              className="folder-mini-icon"
-              alt=""
-              width={24}
-              height={24}
-              loading="lazy"
-            />
-          ))}
-        </div>
-        <span className="card-title">{link.title}</span>
+        <CardMain title={link.title}>
+          <div className="folder-grid" aria-hidden="true">
+            {folderItems.slice(0, 4).map((item) => (
+              <img
+                key={item.id}
+                src={safeImgSrc(item.icon)}
+                className="folder-mini-icon"
+                alt=""
+                width={24}
+                height={24}
+                loading="lazy"
+              />
+            ))}
+          </div>
+        </CardMain>
       </button>
     );
   }
@@ -110,16 +121,17 @@ function LinkCard({ link, links, onOpenFolder, reorderMode = false }) {
         {...sortAttr}
       >
         <EnvBadge locked badge={link.envBadge} />
-        <img
-          src={safeImgSrc(link.icon)}
-          alt=""
-          className="card-icon card-icon-dim"
-          width={64}
-          height={64}
-          loading="lazy"
-        />
-        <span className="card-title">{link.title}</span>
-        <span className="card-lock-hint">{lockTip}</span>
+        <CardMain title={link.title}>
+          <img
+            src={safeImgSrc(link.icon)}
+            alt=""
+            className="card-icon card-icon-dim"
+            width={52}
+            height={52}
+            loading="lazy"
+          />
+        </CardMain>
+        <span className="sr-only">{lockTip}</span>
       </div>
     );
   }
@@ -138,15 +150,16 @@ function LinkCard({ link, links, onOpenFolder, reorderMode = false }) {
         {...sortAttr}
       >
         <EnvBadge badge={link.envBadge} locked={false} />
-        <img
-          src={safeImgSrc(link.icon)}
-          alt=""
-          className="card-icon"
-          width={64}
-          height={64}
-          loading="lazy"
-        />
-        <span className="card-title">{link.title}</span>
+        <CardMain title={link.title}>
+          <img
+            src={safeImgSrc(link.icon)}
+            alt=""
+            className="card-icon"
+            width={52}
+            height={52}
+            loading="lazy"
+          />
+        </CardMain>
       </div>
     );
   }
@@ -165,18 +178,19 @@ function LinkCard({ link, links, onOpenFolder, reorderMode = false }) {
       {...sortAttr}
     >
       <EnvBadge badge={link.envBadge} locked={false} />
-      <img
-        src={safeImgSrc(link.icon)}
-        alt=""
-        className="card-icon"
-        width={64}
-        height={64}
-        loading="lazy"
-        onError={(e) => {
-          e.currentTarget.src = '/default-icon.svg';
-        }}
-      />
-      <span className="card-title">{link.title}</span>
+      <CardMain title={link.title}>
+        <img
+          src={safeImgSrc(link.icon)}
+          alt=""
+          className="card-icon"
+          width={52}
+          height={52}
+          loading="lazy"
+          onError={(e) => {
+            e.currentTarget.src = '/default-icon.svg';
+          }}
+        />
+      </CardMain>
     </a>
   );
 }
@@ -212,7 +226,7 @@ function ReorderToggleButton({
   return (
     <button
       type="button"
-      className={`dashboard-reorder-fab${reorderMode ? ' dashboard-reorder-fab-active' : ''}`}
+      className={`admin-fab dashboard-reorder-fab${reorderMode ? ' dashboard-reorder-fab-active' : ''}`}
       onClick={onToggle}
       aria-pressed={reorderMode}
       aria-label={label}
