@@ -12,7 +12,9 @@
     "test:image": "node scripts/test-image.mjs",
     "test:migration-004": "node scripts/test-migration-004.mjs",
     "test:integration": "node scripts/integration-e2e.mjs",
-    "test": "npm run test:migrations && npm run test:migration-004 && npm run test:environment && npm run test:image",
+    "test:dashboard-reorder": "node scripts/test-dashboard-reorder.mjs",
+    "test:integration-dnd": "node scripts/integration-dnd-playwright.mjs",
+    "test": "npm run test:migrations && npm run test:migration-004 && npm run test:environment && npm run test:image && npm run test:dashboard-reorder",
     "audit:uploads": "node scripts/audit-empty-uploads.mjs",
     "optimize:favicon": "node scripts/optimize-favicon.mjs",
     "optimize:uploads": "node scripts/optimize-uploads.mjs",
@@ -31,6 +33,7 @@
   },
   "devDependencies": {
     "eslint": "^9.39.4",
-    "eslint-config-next": "^16.4.6"
+    "eslint-config-next": "^16.4.6",
+    "playwright": "^1.49.1"
   }
 }

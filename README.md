@@ -157,6 +157,8 @@ Il server deduce l’ambiente dal header **`Host`** (o **`X-Forwarded-Host`** di
 
 Nella dashboard, un chip in header mostra l’ambiente rilevato; puoi forzarlo (**Auto / Esterno / Locale / IP / VPN**) con un override salvato in cookie.
 
+Su **desktop** (puntatore fine / `(hover: hover) and (pointer: fine)`) puoi **riordinare le card** dalla home e dentro i gruppi trascinando la maniglia in alto a sinistra; su touch/mobile il drag è disattivato per non interferire con lo scroll. Il click sulla card apre il link risolto per l’ambiente corrente.
+
 ### Migrazioni 003–004
 
 All’avvio, la migrazione **003** aggiunge le colonne URL multipli e **copia** l’`url` legacy nel campo coerente (euristica su IP/FQDN locale/esterno), **senza modificare** la colonna `url` originale (rimane fallback).

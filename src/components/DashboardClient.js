@@ -6,6 +6,7 @@ import { Settings, X, Lock } from 'lucide-react';
 import { safeHref, safeImgSrc, safeColor } from '../lib/validation';
 import { badgeDisplayLabel } from '../lib/resolved-url-badge';
 import EnvironmentSelector from './EnvironmentSelector';
+import { DashboardSortableGrid } from './DashboardSortable';
 
 function EnvBadge({ badge, locked }) {
   if (locked) {
@@ -28,8 +29,8 @@ function LinkCard({ link, links, onOpenFolder }) {
   const cardStyle = tint ? { backgroundColor: `${tint}20` } : undefined;
   const locked = link.locked === true;
   const href = link.resolvedHref ? safeHref(link.resolvedHref) : '#';
-  const lockTip =
-    link.lockReason || 'Disponibile solo in rete locale';
+  const lockTip = link.lockReason || 'Disponibile solo in rete locale';
+  const sortAttr = { 'data-sort-order': link.sort_order };
 
   const folderItems = isFolder
     ? links
@@ -45,6 +46,8 @@ function LinkCard({ link, links, onOpenFolder }) {
         style={cardStyle}
         onClick={() => onOpenFolder(link)}
         aria-label={`Apri gruppo ${link.title}`}
+        data-link-title={link.title}
+        {...sortAttr}
       >
         <div className="folder-grid" aria-hidden="true">
           {folderItems.slice(0, 4).map((item) => (
@@ -76,6 +79,7 @@ function LinkCard({ link, links, onOpenFolder }) {
         data-locked="1"
         data-badge=""
         data-resolved-href=""
+        {...sortAttr}
       >
         <EnvBadge locked badge={link.envBadge} />
         <img
@@ -103,6 +107,7 @@ function LinkCard({ link, links, onOpenFolder }) {
       data-locked="0"
       data-badge={link.envBadge || ''}
       data-resolved-href={link.resolvedHref || ''}
+      {...sortAttr}
     >
       <EnvBadge badge={link.envBadge} locked={false} />
       <img
@@ -121,7 +126,13 @@ function LinkCard({ link, links, onOpenFolder }) {
   );
 }
 
-function FolderModal({ folder, links, onClose }) {
+function FolderModal({
+  folder,
+  links,
+  setLinks,
+  linksSnapshotRef,
+  onClose,
+}) {
   const dialogRef = useRef(null);
   const closeRef = useRef(null);
   const previousFocus = useRef(null);
@@ -132,6 +143,13 @@ function FolderModal({ folder, links, onClose }) {
         .filter((l) => l.folder_id === folder.id)
         .sort((a, b) => a.sort_order - b.sort_order),
     [links, folder.id]
+  );
+
+  const renderCard = useCallback(
+    (link) => (
+      <LinkCard link={link} links={links} onOpenFolder={() => {}} />
+    ),
+    [links]
   );
 
   const trapFocus = useCallback((e) => {
@@ -193,16 +211,15 @@ function FolderModal({ folder, links, onClose }) {
             <X size={24} aria-hidden="true" />
           </button>
         </div>
-        <div className="grid modal-grid">
+        <div className="grid modal-grid" data-folder-id={folder.id}>
           {modalLinks.length > 0 ? (
-            modalLinks.map((link) => (
-              <LinkCard
-                key={link.id}
-                link={link}
-                links={links}
-                onOpenFolder={() => {}}
-              />
-            ))
+            <DashboardSortableGrid
+              items={modalLinks}
+              containerId={folder.id}
+              setLinks={setLinks}
+              linksSnapshotRef={linksSnapshotRef}
+              renderCard={renderCard}
+            />
           ) : (
             <p className="empty-state">Questo gruppo è vuoto.</p>
           )}
@@ -218,15 +235,31 @@ export default function DashboardClient({
   detectedLabel = '',
   envOverride = 'auto',
 }) {
-  const links = initialLinks;
+  const [links, setLinks] = useState(initialLinks);
+  const linksSnapshotRef = useRef(links);
   const [activeFolder, setActiveFolder] = useState(null);
   const [envPending, setEnvPending] = useState(false);
+
+  useEffect(() => {
+    linksSnapshotRef.current = links;
+  }, [links]);
 
   const rootLinks = useMemo(
     () =>
       links
         .filter((l) => !l.folder_id)
         .sort((a, b) => a.sort_order - b.sort_order),
+    [links]
+  );
+
+  const renderCard = useCallback(
+    (link) => (
+      <LinkCard
+        link={link}
+        links={links}
+        onOpenFolder={setActiveFolder}
+      />
+    ),
     [links]
   );
 
@@ -254,16 +287,16 @@ export default function DashboardClient({
           <div
             className={`grid${envPending ? ' grid-env-pending' : ''}`}
             aria-busy={envPending}
+            data-dashboard-root
           >
             {rootLinks.length > 0 ? (
-              rootLinks.map((link) => (
-                <LinkCard
-                  key={link.id}
-                  link={link}
-                  links={links}
-                  onOpenFolder={setActiveFolder}
-                />
-              ))
+              <DashboardSortableGrid
+                items={rootLinks}
+                containerId={null}
+                setLinks={setLinks}
+                linksSnapshotRef={linksSnapshotRef}
+                renderCard={renderCard}
+              />
             ) : (
               <div className="empty-dashboard">
                 <p>Nessun collegamento nella dashboard.</p>
@@ -288,6 +321,8 @@ export default function DashboardClient({
         <FolderModal
           folder={activeFolder}
           links={links}
+          setLinks={setLinks}
+          linksSnapshotRef={linksSnapshotRef}
           onClose={() => setActiveFolder(null)}
         />
       ) : null}
