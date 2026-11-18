@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "test:migrations": "node scripts/test-migrations.mjs",
     "test:environment": "node scripts/test-environment.mjs",
-    "test": "npm run test:migrations && npm run test:environment",
+    "test:image": "node scripts/test-image.mjs",
+    "test": "npm run test:migrations && npm run test:environment && npm run test:image",
+    "audit:uploads": "node scripts/audit-empty-uploads.mjs",
     "optimize:favicon": "node scripts/optimize-favicon.mjs",
     "optimize:uploads": "node scripts/optimize-uploads.mjs",
     "optimize:icons": "npm run optimize:favicon && npm run optimize:uploads"

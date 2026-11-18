@@ -6,6 +6,7 @@ import {
   matchesLocalSuffix,
   ipv4ToInt,
 } from './url-heuristics.js';
+import { badgeForResolvedHref } from './resolved-url-badge.js';
 
 export const ACCESS_TYPES = [
   'local_only',
@@ -122,51 +123,50 @@ export function resolveLinkForViewer(link, viewerEnv) {
     link.url
   );
 
+  let href = null;
+  let locked = false;
+  let lockReason = null;
+
   if (viewerEnv === 'external') {
     if (access === 'local_only' || access === 'vpn_only') {
       return {
         href: null,
         locked: true,
         lockReason: 'Disponibile solo in rete locale',
-        badge: 'local',
+        badge: null,
       };
     }
-    const href = firstUrl(link.url_external, link.url);
-    return {
-      href,
-      locked: !href,
-      lockReason: href ? null : 'URL non configurato',
-      badge: access === 'local_exposed' ? 'exposed' : null,
-    };
-  }
-
-  if (viewerEnv === 'ip') {
-    const href = firstUrl(
+    href = firstUrl(link.url_external, link.url);
+    locked = !href;
+    lockReason = href ? null : 'URL non configurato';
+  } else if (viewerEnv === 'ip') {
+    href = firstUrl(
       link.url_ip,
       link.url_local_fqdn,
       link.url_external,
       link.url
     );
-    return { href, locked: !href, lockReason: null, badge: 'ip' };
-  }
-
-  if (viewerEnv === 'local_fqdn' || viewerEnv === 'vpn') {
-    const href = firstUrl(
+    locked = !href;
+    lockReason = href ? null : 'URL non configurato';
+  } else if (viewerEnv === 'local_fqdn' || viewerEnv === 'vpn') {
+    href = firstUrl(
       link.url_local_fqdn,
       link.url_ip,
       link.url_external,
       link.url
     );
-    return {
-      href,
-      locked: !href,
-      lockReason: null,
-      badge: viewerEnv === 'vpn' ? 'vpn' : 'lan',
-    };
+    locked = !href;
+    lockReason = href ? null : 'URL non configurato';
+  } else {
+    href = fallback;
+    locked = !href;
+    lockReason = href ? null : 'URL non configurato';
   }
 
-  const href = fallback;
-  return { href, locked: !href, lockReason: null, badge: null };
+  const badge =
+    locked || !href ? null : badgeForResolvedHref(link, href);
+
+  return { href, locked, lockReason, badge };
 }
 
 export function enrichLinksForViewer(links, viewerEnv) {

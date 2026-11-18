@@ -96,7 +96,16 @@ Al primo avvio dopo un upgrade con nuove migrazioni SQLite, viene creato un back
 
 ## Upload icone
 
-Le immagini caricate finiscono in `./public/uploads` (volume montato). Tipi ammessi: PNG, JPEG, WebP, GIF, ICO (max 2 MB; SVG non ammesso). Al caricamento vengono **ridimensionate a max 128px** e salvate in **WebP**.
+Le immagini caricate finiscono in `./public/uploads` (volume montato). Tipi ammessi: PNG, JPEG, WebP, GIF, ICO (max 2 MB; SVG non ammesso). Al caricamento vengono **ridimensionate a max 128px** e salvate in **WebP** (se Sharp fallisce, si conserva l’originale validato).
+
+In modalità **standalone**, i file aggiunti a runtime non sono serviti come statici: le richieste `/uploads/...` passano dalla route dinamica `/api/uploads/...`.
+
+Per trovare icone rotte (0 byte o mancanti sul disco):
+
+```bash
+npm run audit:uploads
+# sul Pi: docker compose exec homelab-hub npm run audit:uploads
+```
 
 ### Ottimizzazione favicon e icone esistenti
 

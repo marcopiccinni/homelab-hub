@@ -10,6 +10,8 @@ import {
 } from '../lib/access-environment';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 function DashboardSkeleton() {
   return (
@@ -55,9 +57,9 @@ async function DashboardFromDb() {
 
   return (
     <DashboardClient
+      key={`env:${override}:${viewerEnv}`}
       initialLinks={links}
       loadError={loadError}
-      viewerEnv={viewerEnv}
       detectedLabel={detectedLabel}
       envOverride={override}
     />

@@ -31,6 +31,10 @@ FROM node:22-bookworm-slim AS runner
 ARG APP_UID=1000
 ARG APP_GID=1000
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libvips42 \
+  && rm -rf /var/lib/apt/lists/*
+
 # Immagine ufficiale Node: utente `node` (di solito uid/gid 1000).
 RUN set -eux; \
     if [ "$APP_UID" != "1000" ] || [ "$APP_GID" != "1000" ]; then \

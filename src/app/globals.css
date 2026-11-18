@@ -559,6 +559,23 @@ button:active {
   border-color: transparent;
 }
 
+.env-selector-pending .env-chip:disabled {
+  opacity: 0.75;
+  cursor: wait;
+}
+
+.env-selector-updating {
+  font-weight: 400;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.grid-env-pending {
+  opacity: 0.92;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
 .card-env-badge {
   position: absolute;
   top: var(--space-2);

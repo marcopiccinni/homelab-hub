@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { detectImageType, MAX_UPLOAD_BYTES } from '../../../lib/upload-utils';
-import { optimizeIconToWebp } from '../../../lib/image-utils';
+import { prepareIconUploadOutput } from '../../../lib/image-utils';
 import { jsonError } from '../../../lib/api-error';
 
 export const dynamic = 'force-dynamic';
@@ -40,18 +40,14 @@ export async function POST(request) {
             await fs.mkdir(uploadDir, { recursive: true });
         }
 
-        let output = buffer;
-        let ext = detected.ext;
-
-        const optimized = await optimizeIconToWebp(buffer);
-        if (optimized) {
-            output = optimized.buffer;
-            ext = optimized.ext;
+        const prepared = await prepareIconUploadOutput(buffer, detected);
+        if (!prepared?.buffer?.length) {
+            return jsonError(400, 'Immagine non valida o non decodificabile');
         }
 
-        const fileName = `${randomUUID()}${ext}`;
+        const fileName = `${randomUUID()}${prepared.ext}`;
         const filePath = path.join(uploadDir, fileName);
-        await fs.writeFile(filePath, output);
+        await fs.writeFile(filePath, prepared.buffer);
 
         return NextResponse.json({ url: `/uploads/${fileName}` });
     } catch (error) {

@@ -8,7 +8,9 @@ import {
 import {
   detectAccessEnvironment,
   resolveLinkForViewer,
+  enrichLinksForViewer,
 } from '../src/lib/access-environment.js';
+import { badgeForResolvedHref } from '../src/lib/resolved-url-badge.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -66,6 +68,34 @@ assert.equal(
   resolveLinkForViewer(exposed, 'ip').href,
   'http://10.0.0.1'
 );
+
+// --- Badge = sorgente URL risolto (non ambiente viewer) ---
+const externalOnly = {
+  is_folder: 0,
+  access_type: 'external',
+  url_external: 'https://notion.so',
+  url_local_fqdn: null,
+  url_ip: null,
+  url: 'https://notion.so',
+};
+const fromIpViewer = resolveLinkForViewer(externalOnly, 'ip');
+assert.equal(fromIpViewer.href, 'https://notion.so');
+assert.equal(fromIpViewer.badge, 'web');
+
+const [enrichedExternal] = enrichLinksForViewer([externalOnly], 'ip');
+assert.equal(enrichedExternal.envBadge, 'web');
+
+assert.equal(
+  badgeForResolvedHref(
+    { url_ip: 'http://10.0.0.2', url_external: 'https://x.com' },
+    'http://10.0.0.2'
+  ),
+  'ip'
+);
+
+const lockedExt = resolveLinkForViewer(localLink, 'external');
+assert.equal(lockedExt.locked, true);
+assert.equal(lockedExt.badge, null);
 
 // --- Migrazione 003 preserva url legacy ---
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'homelab-env-'));

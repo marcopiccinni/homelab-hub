@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Settings, X, Lock } from 'lucide-react';
 import { safeHref, safeImgSrc, safeColor } from '../lib/validation';
+import { badgeDisplayLabel } from '../lib/resolved-url-badge';
 import EnvironmentSelector from './EnvironmentSelector';
 
 function EnvBadge({ badge, locked }) {
@@ -16,8 +17,9 @@ function EnvBadge({ badge, locked }) {
     );
   }
   if (!badge) return null;
-  const labels = { ip: 'IP', lan: 'LAN', vpn: 'VPN', exposed: 'Esposta', local: 'Locale' };
-  return <span className="card-env-badge">{labels[badge] || badge}</span>;
+  return (
+    <span className="card-env-badge">{badgeDisplayLabel(badge)}</span>
+  );
 }
 
 function LinkCard({ link, links, onOpenFolder }) {
@@ -208,8 +210,9 @@ export default function DashboardClient({
   detectedLabel = '',
   envOverride = 'auto',
 }) {
-  const [links] = useState(initialLinks);
+  const links = initialLinks;
   const [activeFolder, setActiveFolder] = useState(null);
+  const [envPending, setEnvPending] = useState(false);
 
   const rootLinks = useMemo(
     () =>
@@ -227,6 +230,7 @@ export default function DashboardClient({
         <EnvironmentSelector
           detectedLabel={detectedLabel}
           activeOverride={envOverride}
+          onPendingChange={setEnvPending}
         />
       </header>
 
@@ -239,7 +243,10 @@ export default function DashboardClient({
         </div>
       ) : (
         <main>
-          <div className="grid">
+          <div
+            className={`grid${envPending ? ' grid-env-pending' : ''}`}
+            aria-busy={envPending}
+          >
             {rootLinks.length > 0 ? (
               rootLinks.map((link) => (
                 <LinkCard

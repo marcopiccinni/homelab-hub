@@ -3,7 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import { MAX_UPLOAD_BYTES } from './upload-utils';
 import { assertSafeFetchUrl, safeFetch } from './ssrf';
-import { optimizeIconToWebp } from './image-utils';
+import { detectImageType } from './upload-utils';
+import { prepareIconUploadOutput } from './image-utils';
 
 const CACHE_DIR = path.join(process.cwd(), 'public', 'uploads', 'icons');
 
@@ -70,10 +71,15 @@ export async function cacheRemoteIcon(iconUrl) {
     const buffer = await readBinaryLimited(response);
     if (!buffer) return null;
 
-    const optimized = await optimizeIconToWebp(buffer);
-    const fileName = `${cacheKey}.webp`;
+    const detected = detectImageType(buffer);
+    if (!detected) return null;
+
+    const prepared = await prepareIconUploadOutput(buffer, detected);
+    if (!prepared?.buffer?.length) return null;
+
+    const fileName = `${cacheKey}${prepared.ext}`;
     const outPath = path.join(CACHE_DIR, fileName);
-    fs.writeFileSync(outPath, optimized?.buffer ?? buffer);
+    fs.writeFileSync(outPath, prepared.buffer);
 
     return `/uploads/icons/${fileName}`;
   } catch (err) {
