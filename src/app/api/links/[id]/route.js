@@ -1,8 +1,9 @@
 import { getDb } from '../../../../lib/db';
 import { NextResponse } from 'next/server';
-import { validateLinkUrl, validateIcon, validateColor } from '../../../../lib/validation';
+import { validateIcon, validateColor } from '../../../../lib/validation';
 import { jsonError } from '../../../../lib/api-error';
 import { cacheRemoteIcon } from '../../../../lib/icon-cache';
+import { parseLinkUrlFields } from '../../../../lib/link-payload';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,12 +18,8 @@ export async function PUT(request, { params }) {
             return jsonError(400, 'Titolo obbligatorio');
         }
 
-        let urlValue = '';
-        if (!isFolder) {
-            const urlCheck = validateLinkUrl(body.url, { allowEmpty: false });
-            if (!urlCheck.ok) return jsonError(400, urlCheck.error);
-            urlValue = urlCheck.value;
-        }
+        const urlFields = parseLinkUrlFields(body, { isFolder: isFolder === 1 });
+        if (!urlFields.ok) return jsonError(400, urlFields.error);
 
         const iconCheck = validateIcon(isFolder ? null : body.icon);
         if (!iconCheck.ok) return jsonError(400, iconCheck.error);
@@ -37,10 +34,17 @@ export async function PUT(request, { params }) {
         }
 
         getDb().prepare(
-            'UPDATE links SET title = ?, url = ?, icon = ?, color = ?, sort_order = ?, visible = ?, is_folder = ?, folder_id = ? WHERE id = ?'
+            `UPDATE links SET
+              title = ?, url = ?, url_external = ?, url_local_fqdn = ?, url_ip = ?, access_type = ?,
+              icon = ?, color = ?, sort_order = ?, visible = ?, is_folder = ?, folder_id = ?
+             WHERE id = ?`
         ).run(
             title.trim(),
-            urlValue,
+            urlFields.url,
+            urlFields.url_external,
+            urlFields.url_local_fqdn,
+            urlFields.url_ip,
+            urlFields.access_type,
             iconValue,
             colorCheck.value,
             sort_order,

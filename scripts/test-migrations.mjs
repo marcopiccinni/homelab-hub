@@ -53,12 +53,18 @@ const live = new Database(dbPath);
 runMigrations(live, dbPath);
 
 const version = live.pragma('user_version', { simple: true });
-if (version !== 2) {
-  console.error('Expected user_version 2, got', version);
+if (version !== 3) {
+  console.error('Expected user_version 3, got', version);
   process.exit(1);
 }
 
 const after = live.prepare('SELECT id, title, url, icon, sort_order, visible, is_folder, folder_id, color FROM links ORDER BY id').all();
+
+const ha = live.prepare('SELECT url_ip, access_type FROM links WHERE title = ?').get('Home Assistant');
+if (ha.url_ip !== 'http://192.168.1.10:8123' || ha.access_type !== 'local_only') {
+  console.error('Migration 003: Home Assistant classification wrong', ha);
+  process.exit(1);
+}
 
 function rowKey(r) {
   return `${r.id}|${r.title}|${r.url}|${r.icon}|${r.sort_order}|${r.visible}|${r.is_folder}`;

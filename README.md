@@ -126,6 +126,39 @@ Cosa fa:
 
 Non committare `data/` né il database di produzione.
 
+## Ambienti di accesso
+
+Ogni collegamento può avere **fino a tre URL** (esterno, FQDN locale, IP LAN) e un **tipo di risorsa**:
+
+| Tipo | Comportamento |
+|------|----------------|
+| **Solo locale** | Raggiungibile solo dalla LAN/VPN; fuori rete locale la tile è visibile ma bloccata (lucchetto). |
+| **Solo VPN** | Come sopra, pensato per indirizzi Tailscale/vpn. |
+| **Locale esposta** | In LAN usa URL locale/IP; da Internet usa l’URL esterno. |
+| **Esterna** | Usa solo l’URL esterno quando sei «esterno». |
+
+### Rilevamento automatico
+
+Il server deduce l’ambiente dal header **`Host`** (o **`X-Forwarded-Host`** dietro reverse proxy):
+
+- IPv4 privata (RFC1918, loopback) → rete **IP**
+- Suffissi locali (default `.lan`, `.home.arpa`, `.local`, `.internal`; variabile `LOCAL_SUFFIXES`)
+- Range VPN (default **Tailscale** `100.64.0.0/10`; variabile `VPN_RANGES`)
+- Tutto il resto → **esterno**
+
+Nella dashboard, un chip in header mostra l’ambiente rilevato; puoi forzarlo (**Auto / Esterno / Locale / IP / VPN**) con un override salvato in cookie.
+
+### Migrazione 003
+
+All’avvio, la migrazione **003** aggiunge le colonne URL multipli e **copia** l’`url` legacy nel campo coerente (euristica su IP/FQDN locale/esterno), **senza modificare** la colonna `url` originale (rimane fallback).
+
+### Test
+
+```bash
+npm test                  # migrazioni + ambienti
+npm run test:environment
+```
+
 ## Licenza
 
 MIT — Copyright Marco Piccinni (vedi [LICENSE](LICENSE)).

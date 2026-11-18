@@ -14,4 +14,6 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=file:./data/intranet.db
+      - LOCAL_SUFFIXES=${LOCAL_SUFFIXES:-.lan,.home.arpa,.local,.internal}
+      - VPN_RANGES=${VPN_RANGES:-100.64.0.0/10}
     restart: unless-stopped

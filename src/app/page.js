@@ -1,6 +1,13 @@
 import { Suspense } from 'react';
+import { cookies, headers } from 'next/headers';
 import DashboardClient from '../components/DashboardClient';
 import { getVisibleLinks } from '../lib/links-data';
+import {
+  COOKIE_NAME,
+  detectAccessEnvironment,
+  enrichLinksForViewer,
+  environmentLabel,
+} from '../lib/access-environment';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,13 +30,38 @@ function DashboardSkeleton() {
 async function DashboardFromDb() {
   let links = [];
   let loadError = false;
+
+  const h = await headers();
+  const host =
+    h.get('x-forwarded-host')?.split(',')[0]?.trim() ||
+    h.get('host') ||
+    '';
+
+  const cookieStore = await cookies();
+  const override = cookieStore.get(COOKIE_NAME)?.value ?? 'auto';
+
+  const viewerEnv = detectAccessEnvironment(host, override);
+  const detectedLabel = environmentLabel(
+    override === 'auto' ? viewerEnv : override
+  );
+
   try {
-    links = getVisibleLinks();
+    const raw = getVisibleLinks();
+    links = enrichLinksForViewer(raw, viewerEnv);
   } catch (err) {
     console.error('Dashboard SSR error:', err);
     loadError = true;
   }
-  return <DashboardClient initialLinks={links} loadError={loadError} />;
+
+  return (
+    <DashboardClient
+      initialLinks={links}
+      loadError={loadError}
+      viewerEnv={viewerEnv}
+      detectedLabel={detectedLabel}
+      envOverride={override}
+    />
+  );
 }
 
 export default function HomePage() {

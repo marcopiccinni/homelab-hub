@@ -2,13 +2,32 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Settings, X } from 'lucide-react';
+import { Settings, X, Lock } from 'lucide-react';
 import { safeHref, safeImgSrc, safeColor } from '../lib/validation';
+import EnvironmentSelector from './EnvironmentSelector';
+
+function EnvBadge({ badge, locked }) {
+  if (locked) {
+    return (
+      <span className="card-env-badge card-env-locked" title="Disponibile solo in rete locale">
+        <Lock size={12} aria-hidden="true" />
+        <span className="sr-only">Bloccato fuori rete locale</span>
+      </span>
+    );
+  }
+  if (!badge) return null;
+  const labels = { ip: 'IP', lan: 'LAN', vpn: 'VPN', exposed: 'Esposta', local: 'Locale' };
+  return <span className="card-env-badge">{labels[badge] || badge}</span>;
+}
 
 function LinkCard({ link, links, onOpenFolder }) {
   const isFolder = link.is_folder === 1;
   const tint = safeColor(link.color);
   const cardStyle = tint ? { backgroundColor: `${tint}20` } : undefined;
+  const locked = link.locked === true;
+  const href = link.resolvedHref ? safeHref(link.resolvedHref) : '#';
+  const lockTip =
+    link.lockReason || 'Disponibile solo in rete locale';
 
   const folderItems = isFolder
     ? links
@@ -43,14 +62,39 @@ function LinkCard({ link, links, onOpenFolder }) {
     );
   }
 
+  if (locked) {
+    return (
+      <div
+        className="card card-static card-locked"
+        style={cardStyle}
+        title={lockTip}
+        role="group"
+        aria-label={`${link.title} — ${lockTip}`}
+      >
+        <EnvBadge locked badge={link.envBadge} />
+        <img
+          src={safeImgSrc(link.icon)}
+          alt=""
+          className="card-icon card-icon-dim"
+          width={64}
+          height={64}
+          loading="lazy"
+        />
+        <span className="card-title">{link.title}</span>
+        <span className="card-lock-hint">{lockTip}</span>
+      </div>
+    );
+  }
+
   return (
     <a
-      href={safeHref(link.url)}
+      href={href}
       target="_blank"
       rel="noopener noreferrer"
       className="card card-static card-link"
       style={cardStyle}
     >
+      <EnvBadge badge={link.envBadge} locked={false} />
       <img
         src={safeImgSrc(link.icon)}
         alt=""
@@ -158,7 +202,12 @@ function FolderModal({ folder, links, onClose }) {
   );
 }
 
-export default function DashboardClient({ initialLinks = [], loadError = false }) {
+export default function DashboardClient({
+  initialLinks = [],
+  loadError = false,
+  detectedLabel = '',
+  envOverride = 'auto',
+}) {
   const [links] = useState(initialLinks);
   const [activeFolder, setActiveFolder] = useState(null);
 
@@ -175,6 +224,10 @@ export default function DashboardClient({ initialLinks = [], loadError = false }
       <header className="header header-once">
         <h1 className="title">Homelab Hub</h1>
         <p className="subtitle">I tuoi servizi di rete, in un unico posto</p>
+        <EnvironmentSelector
+          detectedLabel={detectedLabel}
+          activeOverride={envOverride}
+        />
       </header>
 
       {loadError ? (

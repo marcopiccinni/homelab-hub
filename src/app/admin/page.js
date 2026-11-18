@@ -152,6 +152,11 @@ export default function AdminPage() {
     const [activeId, setActiveId] = useState(null);
     const [title, setTitle] = useState('');
     const [url, setUrl] = useState('');
+    const [urlExternal, setUrlExternal] = useState('');
+    const [urlLocalFqdn, setUrlLocalFqdn] = useState('');
+    const [urlIp, setUrlIp] = useState('');
+    const [accessType, setAccessType] = useState('external');
+    const [verifyField, setVerifyField] = useState(null);
     const [icon, setIcon] = useState('');
     const [color, setColor] = useState('');
     const [isFolder, setIsFolder] = useState(false);
@@ -201,16 +206,15 @@ export default function AdminPage() {
     const handleSave = async (e) => {
         e.preventDefault();
         if (!title) return;
-        if (!isFolder && !url) return;
-
-        let fullUrl = url;
-        if (!isFolder && url && !url.startsWith('http://') && !url.startsWith('https://')) {
-            fullUrl = 'https://' + url;
-        }
+        if (!isFolder && !urlExternal && !urlLocalFqdn && !urlIp && !url) return;
 
         const payload = {
             title,
-            url: isFolder ? '' : fullUrl,
+            url: isFolder ? '' : url,
+            url_external: isFolder ? null : urlExternal || null,
+            url_local_fqdn: isFolder ? null : urlLocalFqdn || null,
+            url_ip: isFolder ? null : urlIp || null,
+            access_type: isFolder ? 'external' : accessType,
             icon: isFolder ? null : icon,
             color: color || null,
             is_folder: isFolder ? 1 : 0,
@@ -251,6 +255,10 @@ export default function AdminPage() {
     const resetForm = () => {
         setTitle('');
         setUrl('');
+        setUrlExternal('');
+        setUrlLocalFqdn('');
+        setUrlIp('');
+        setAccessType('external');
         setIcon('');
         setColor('');
         setIsFolder(false);
@@ -262,10 +270,15 @@ export default function AdminPage() {
         setEditingId(link.id);
         setTitle(link.title);
         setUrl(link.url || '');
+        setUrlExternal(link.url_external || '');
+        setUrlLocalFqdn(link.url_local_fqdn || '');
+        setUrlIp(link.url_ip || '');
+        setAccessType(link.access_type || 'external');
         setIcon(link.icon || '');
         setColor(link.color || '');
         setIsFolder(link.is_folder === 1);
         setFolderId(link.folder_id ? link.folder_id.toString() : '');
+        formDrawerRef.current && (formDrawerRef.current.open = true);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -428,27 +441,36 @@ export default function AdminPage() {
         }
     };
 
-    const handleVerify = async () => {
-        if (!url) return;
+    const handleVerify = async (field) => {
+        const map = {
+            external: { value: urlExternal, set: setUrlExternal },
+            local: { value: urlLocalFqdn, set: setUrlLocalFqdn },
+            ip: { value: urlIp, set: setUrlIp },
+            legacy: { value: url, set: setUrl },
+        };
+        const target = map[field];
+        if (!target?.value) return;
+        setVerifyField(field);
         setLoading(true);
         try {
             const res = await fetch('/api/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url }),
+                body: JSON.stringify({ url: target.value }),
                 cache: 'no-store',
             });
             const data = await res.json();
-            if (!data.reachable) alert('Attenzione: Il sito non sembra raggiungibile.');
-            if (data.iconUrl) {
+            if (!data.reachable) alert('Attenzione: il sito non sembra raggiungibile.');
+            if (data.iconUrl && field === 'external') {
                 if (icon && icon !== data.iconUrl) {
                     if (confirm('È stata trovata una nuova icona. Vuoi sovrascrivere?')) setIcon(data.iconUrl);
                 } else setIcon(data.iconUrl);
             }
-            if (data.finalUrl && !url.startsWith('http')) setUrl(data.finalUrl);
+            if (data.finalUrl) target.set(data.finalUrl);
         } catch (err) {
             alert('Errore durante la verifica: ' + err.message);
         } finally {
+            setVerifyField(null);
             setLoading(false);
         }
     };
@@ -487,15 +509,48 @@ export default function AdminPage() {
                             <input type="text" placeholder={isFolder ? "Es. Smart Home" : "Es. Home Assistant"} value={title} onChange={(e) => setTitle(e.target.value)} />
                         </div>
                         {!isFolder && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                <label style={{ fontSize: '0.8rem', opacity: 0.8 }}>URL</label>
-                            <div className="admin-url-row">
-                                <input type="text" placeholder="Es. homeassistant.local" value={url} onChange={(e) => setUrl(e.target.value)} />
-                                <button type="button" className="btn-verify" onClick={handleVerify} disabled={!url || loading}>
-                                    {loading ? '…' : 'Verifica'}
-                                </button>
-                            </div>
-                        </div>
+                            <>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', gridColumn: '1 / -1' }}>
+                                    <label style={{ fontSize: '0.8rem', opacity: 0.8 }}>Tipo risorsa</label>
+                                    <select
+                                        value={accessType}
+                                        onChange={(e) => setAccessType(e.target.value)}
+                                        style={{ padding: '0.75rem 1rem', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}
+                                    >
+                                        <option value="local_only">Solo locale</option>
+                                        <option value="vpn_only">Solo VPN</option>
+                                        <option value="local_exposed">Locale esposta</option>
+                                        <option value="external">Esterna</option>
+                                    </select>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <label style={{ fontSize: '0.8rem', opacity: 0.8 }}>URL esterno</label>
+                                    <div className="admin-url-row">
+                                        <input type="text" placeholder="https://esempio.com" value={urlExternal} onChange={(e) => setUrlExternal(e.target.value)} />
+                                        <button type="button" className="btn-verify" onClick={() => handleVerify('external')} disabled={!urlExternal || loading}>
+                                            {verifyField === 'external' ? '…' : 'Verifica'}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <label style={{ fontSize: '0.8rem', opacity: 0.8 }}>URL locale (FQDN)</label>
+                                    <div className="admin-url-row">
+                                        <input type="text" placeholder="http://nas.lan:8080" value={urlLocalFqdn} onChange={(e) => setUrlLocalFqdn(e.target.value)} />
+                                        <button type="button" className="btn-verify" onClick={() => handleVerify('local')} disabled={!urlLocalFqdn || loading}>
+                                            {verifyField === 'local' ? '…' : 'Verifica'}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', gridColumn: '1 / -1' }}>
+                                    <label style={{ fontSize: '0.8rem', opacity: 0.8 }}>URL IP (LAN)</label>
+                                    <div className="admin-url-row">
+                                        <input type="text" placeholder="http://192.168.1.10" value={urlIp} onChange={(e) => setUrlIp(e.target.value)} />
+                                        <button type="button" className="btn-verify" onClick={() => handleVerify('ip')} disabled={!urlIp || loading}>
+                                            {verifyField === 'ip' ? '…' : 'Verifica'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
                         )}
                         {!isFolder && allFolders.length > 0 && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', gridColumn: '1 / -1' }}>
