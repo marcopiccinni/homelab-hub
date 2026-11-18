@@ -14,6 +14,7 @@
     "test:integration": "node scripts/integration-e2e.mjs",
     "test:dashboard-reorder": "node scripts/test-dashboard-reorder.mjs",
     "test:integration-dnd": "node scripts/integration-dnd-playwright.mjs",
+    "test:integration-card-titles": "node scripts/integration-card-titles-playwright.mjs",
     "test": "npm run test:migrations && npm run test:migration-004 && npm run test:environment && npm run test:image && npm run test:dashboard-reorder",
     "audit:uploads": "node scripts/audit-empty-uploads.mjs",
     "optimize:favicon": "node scripts/optimize-favicon.mjs",
