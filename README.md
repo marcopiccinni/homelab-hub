@@ -135,6 +135,34 @@ Cosa fa:
 
 Non committare `data/` né il database di produzione.
 
+## Asset di rete (inventario)
+
+**Amministrazione → Asset di rete** (`/admin/assets`) sostituisce e amplia l’ex «Analisi di rete»:
+
+- Migrazione **005** (additiva + backup): subnet, asset, interfacce/MAC, IP, FQDN (N↔N), porte **dichiarate** vs **osservate**, coda nuovi device, job scan.
+- Seed subnet generiche (10.0.x/24, 192.168.1.0/24, Zigbee) solo se il DB è vuoto.
+- Import **Excel** (fogli `General` / `All` / `Services`) con anteprima; fixture sintetica in `scripts/fixtures/synth-assets.xlsx`.
+- **nmap** (`-sT`, top ports o full) solo su IP privati / FQDN che risolvono in LAN; job in coda (non blocca la UI).
+- **Mercusys** opzionale: `MERCUSYS_URL` + `MERCUSYS_PASSWORD` in `.env` (mai nel repo); se non configurato o API sconosciuta, import manuale/CSV.
+
+### Docker sul Raspberry Pi
+
+L’immagine include **nmap**. Il compose di default non richiede `network_mode: host`; gli scan usano **TCP connect** (Funziona anche senza `NET_RAW`).
+
+Per discovery avanzata (ARP, alcuni probe):
+
+```yaml
+cap_add:
+  - NET_ADMIN
+  - NET_RAW
+# oppure, solo se accetti esporre l’app sulla LAN host:
+# network_mode: host
+```
+
+Senza queste capability, host discovery e alcuni servizi `-sV` possono essere limitati; i risultati restano validi per porte TCP note.
+
+La vista legacy host da link resta su `/admin/network`.
+
 ## Ambienti di accesso
 
 Ogni collegamento può avere **fino a tre URL** (esterno, FQDN locale, IP LAN) e un **tipo di risorsa**:

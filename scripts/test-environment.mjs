@@ -137,7 +137,7 @@ db.close();
 const live = new Database(dbPath);
 runMigrations(live, dbPath);
 const row = live.prepare('SELECT url, url_ip, access_type FROM links WHERE id=1').get();
-assert.equal(live.pragma('user_version', { simple: true }), 4);
+assert.equal(live.pragma('user_version', { simple: true }), 5);
 assert.equal(row.url, urlBefore);
 assert.equal(row.url_ip, 'http://192.168.0.5:8080');
 assert.equal(row.access_type, 'local_only');

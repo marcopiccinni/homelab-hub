@@ -32,7 +32,7 @@ ARG APP_UID=1000
 ARG APP_GID=1000
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libvips42 \
+  && apt-get install -y --no-install-recommends libvips42 nmap \
   && rm -rf /var/lib/apt/lists/*
 
 # Immagine ufficiale Node: utente `node` (di solito uid/gid 1000).

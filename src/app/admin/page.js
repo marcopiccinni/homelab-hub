@@ -483,7 +483,7 @@ export default function AdminPage() {
                 <nav className="admin-nav-links" aria-label="Navigazione">
                     <Link href="/">← Dashboard</Link>
                     <span className="nav-sep" aria-hidden="true">|</span>
-                    <Link href="/admin/network">Analisi di rete</Link>
+                    <Link href="/admin/assets">Asset di rete</Link>
                 </nav>
             </header>
 

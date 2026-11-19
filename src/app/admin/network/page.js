@@ -19,6 +19,10 @@ export default function NetworkAnalysisPage() {
         <h1 className="title">Analisi di rete</h1>
         <p className="subtitle">Host e porte usati dai collegamenti salvati</p>
         <nav className="admin-nav-links" aria-label="Navigazione amministrazione">
+          <Link href="/admin/assets">→ Asset completo</Link>
+          <span className="nav-sep" aria-hidden="true">
+            |
+          </span>
           <Link href="/admin">← Torna amministrazione</Link>
           <span className="nav-sep" aria-hidden="true">
             |

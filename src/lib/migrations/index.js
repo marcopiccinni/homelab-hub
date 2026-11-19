@@ -6,6 +6,7 @@ import * as m001 from './001_baseline.js';
 import * as m002 from './002_fix_orphan_folder_ids.js';
 import * as m003 from './003_multi_url_access.js';
 import * as m004 from './004_fix_access_type_with_external.js';
+import * as m005 from './005_asset_management.js';
 
 const migrationsDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -14,6 +15,7 @@ const MIGRATIONS = [
   { version: 2, file: '002_fix_orphan_folder_ids.js', up: m002.up },
   { version: 3, file: '003_multi_url_access.js', up: m003.up },
   { version: 4, file: '004_fix_access_type_with_external.js', up: m004.up },
+  { version: 5, file: '005_asset_management.js', up: m005.up },
 ];
 
 function getBackupDir(dataDir) {

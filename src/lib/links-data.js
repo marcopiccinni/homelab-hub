@@ -18,11 +18,21 @@ export function getAllLinks() {
 
 export function getNetworkHostsReport() {
   const db = getDb();
-  const links = db.prepare('SELECT url FROM links WHERE url IS NOT NULL AND url != ?').all('');
+  const links = db
+    .prepare(
+      `SELECT url, url_external, url_local_fqdn, url_ip FROM links
+       WHERE is_folder = 0`
+    )
+    .all();
 
   const hostsMap = {};
 
-  for (const { url } of links) {
+  for (const row of links) {
+    const urls = new Set();
+    for (const f of ['url', 'url_external', 'url_local_fqdn', 'url_ip']) {
+      if (row[f]) urls.add(row[f]);
+    }
+    for (const url of urls) {
     try {
       const parsed = new URL(url);
       const host = parsed.hostname;
@@ -33,6 +43,7 @@ export function getNetworkHostsReport() {
       hostsMap[host].add(port);
     } catch {
       /* skip */
+    }
     }
   }
 
