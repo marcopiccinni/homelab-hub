@@ -61,10 +61,12 @@ async function main() {
 
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
-  await page.goto(`${BASE}/admin/assets`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/admin/assets`, { waitUntil: 'domcontentloaded' });
   await page.locator('[data-assets-tab]').waitFor();
-  await page.locator('button.assets-tab', { hasText: 'Riepilogo' }).click();
-  await page.locator('.assets-stat-value').first().waitFor();
+  await page.waitForResponse((r) => r.url().includes('/api/assets/summary') && r.ok(), {
+    timeout: 20000,
+  });
+  await page.locator('.assets-stat-value').first().waitFor({ timeout: 20000 });
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-summary-desktop.png'), fullPage: true });
 
   await page.locator('button.assets-tab', { hasText: 'Subnet' }).click();
@@ -79,9 +81,24 @@ async function main() {
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-subnet-desktop.png'), fullPage: true });
 
   await page.locator('button.assets-tab', { hasText: 'Asset' }).click();
-  await page.locator('.assets-list .assets-row').first().click();
-  await page.waitForSelector('.assets-detail');
-  await page.screenshot({ path: path.join(ARTIFACTS, 'assets-detail-desktop.png') });
+  await page.locator('.assets-table tbody tr').first().waitFor({ timeout: 10000 });
+  await page.screenshot({ path: path.join(ARTIFACTS, 'assets-list-desktop.png'), fullPage: true });
+  await page.locator('.assets-table tbody tr').first().click();
+  await page.waitForSelector('.assets-detail-card');
+  await page.screenshot({ path: path.join(ARTIFACTS, 'assets-detail-desktop.png'), fullPage: true });
+
+  await page.locator('button.assets-tab', { hasText: 'Coda' }).click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: path.join(ARTIFACTS, 'assets-discovery-desktop.png'), fullPage: true });
+
+  await page.locator('button.assets-tab', { hasText: 'Import' }).click();
+  const [fileChooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.locator('.assets-import label').first().click(),
+  ]);
+  await fileChooser.setFiles(FIXTURE);
+  await page.locator('[data-testid="import-preview"]').waitFor({ timeout: 15000 });
+  await page.screenshot({ path: path.join(ARTIFACTS, 'assets-import-preview-desktop.png'), fullPage: true });
 
   const mob = await browser.newContext({
     ...devices['iPhone 12'],

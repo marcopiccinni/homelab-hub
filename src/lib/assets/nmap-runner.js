@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { getDb } from '../db.js';
 import { assertScanTargetAllowed, isPrivateIPv4 } from './private-ip.js';
 import { resolveSubnetIdForIp } from './repository.js';
@@ -23,6 +23,54 @@ async function resolveTargetHost(target) {
   return addrs[0];
 }
 
+function touchAssetLastSeenForIp(db, ipId, observedAt) {
+  db.prepare(
+    `UPDATE assets SET last_seen_at=?
+     WHERE id IN (SELECT asset_id FROM asset_ip_assignments WHERE ip_id=?)`
+  ).run(observedAt, ipId);
+}
+
+function syncArpMacs(jobId) {
+  const db = getDb();
+  let text = '';
+  try {
+    text = execFileSync('ip', ['neigh', 'show'], { encoding: 'utf8', timeout: 5000 });
+  } catch {
+    try {
+      text = execFileSync('arp', ['-an'], { encoding: 'utf8', timeout: 5000 });
+    } catch {
+      return;
+    }
+  }
+  const updateQueue = db.prepare(
+    `UPDATE discovery_queue SET mac_address=? WHERE scan_job_id=? AND ip_address=? AND (mac_address IS NULL OR mac_address='')`
+  );
+  const findIface = db.prepare(
+    `SELECT ai.asset_id, ai.id AS iface_id FROM asset_interfaces ai WHERE ai.mac_address=? LIMIT 1`
+  );
+  const assignIpStmt = db.prepare(
+    `INSERT OR IGNORE INTO asset_ip_assignments (asset_id, ip_id) VALUES (?, ?)`
+  );
+  const getIp = db.prepare('SELECT id FROM ip_addresses WHERE address=?');
+  for (const line of text.split('\n')) {
+    const m =
+      line.match(/(\d+\.\d+\.\d+\.\d+)\s+dev\s+\S+\s+lladdr\s+([0-9a-f:]+)/i) ||
+      line.match(/\((\d+\.\d+\.\d+\.\d+)\)\s+at\s+([0-9a-f:]+)/i);
+    if (!m) continue;
+    const ip = m[1];
+    const mac = normalizeMac(m[2]);
+    if (!mac) continue;
+    updateQueue.run(mac, jobId, ip);
+    const ipRow = getIp.get(ip);
+    if (!ipRow) continue;
+    const hit = findIface.get(mac);
+    if (hit?.asset_id) {
+      assignIpStmt.run(hit.asset_id, ipRow.id);
+      db.prepare(`UPDATE assets SET last_seen_at=datetime('now') WHERE id=?`).run(hit.asset_id);
+    }
+  }
+}
+
 function parseGrepable(stdout, jobId, observedAt) {
   const db = getDb();
   const insObs = db.prepare(`
@@ -37,23 +85,34 @@ function parseGrepable(stdout, jobId, observedAt) {
   `);
   const getIp = db.prepare('SELECT id FROM ip_addresses WHERE address=?');
   const queueNew = db.prepare(`
-    INSERT INTO discovery_queue (ip_address, hostname, first_seen_at, last_seen_at, scan_job_id, status)
-    VALUES (?, ?, ?, ?, ?, 'pending')
+    INSERT INTO discovery_queue (ip_address, mac_address, hostname, first_seen_at, last_seen_at, scan_job_id, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending')
   `);
 
+  const updProgress = db.prepare(`UPDATE scan_jobs SET progress=? WHERE id=?`);
   const lines = stdout.split('\n');
+  const hostLines = lines.filter((l) => l.startsWith('Host:'));
+  let done = 0;
   for (const line of lines) {
     if (!line.startsWith('Host:')) continue;
     const ip = line.match(/Host:\s+(\d+\.\d+\.\d+\.\d+)/)?.[1];
     if (!ip) continue;
+    const macRaw = line.match(/MAC:\s+([0-9A-F:]+)/i)?.[1];
+    const macFromLine = macRaw ? normalizeMac(macRaw) : null;
     const subnetId = resolveSubnetIdForIp(ip);
     upsertIp.run(ip, subnetId, observedAt);
     const ipId = getIp.get(ip).id;
+    touchAssetLastSeenForIp(db, ipId, observedAt);
+    if (macFromLine) {
+      db.prepare(
+        `UPDATE discovery_queue SET mac_address=? WHERE scan_job_id=? AND ip_address=?`
+      ).run(macFromLine, jobId, ip);
+    }
     const known = db
       .prepare('SELECT 1 FROM asset_ip_assignments WHERE ip_id=? LIMIT 1')
       .get(ipId);
     if (!known) {
-      queueNew.run(ip, null, observedAt, observedAt, jobId);
+      queueNew.run(ip, macFromLine, null, observedAt, observedAt, jobId);
     }
     const portsSection = line.split('Ports:')[1] || '';
     const portRe = /(\d+)\/open\/tcp(?:\/\/([^/]*))?(?:\/\/([^/]*))?/g;
@@ -64,6 +123,11 @@ function parseGrepable(stdout, jobId, observedAt) {
       const ver = m[3] || null;
       insObs.run(jobId, ipId, ip, observedAt, port, 'open', svc, ver);
     }
+    done += 1;
+    if (hostLines.length) {
+      const pct = Math.min(99, Math.round((done / hostLines.length) * 100));
+      updProgress.run(`${pct}%`, jobId);
+    }
   }
 }
 
@@ -71,7 +135,7 @@ function runNmap(target, profile) {
   return new Promise((resolve, reject) => {
     const args =
       profile === 'full'
-        ? ['-sT', '-T3', '-p-', '-oG', '-', target]
+        ? ['-sT', '-sV', '--version-light', '-T3', '-p-', '-oG', '-', target]
         : ['-sT', '-T4', '--top-ports', '200', '-oG', '-', target];
     const proc = spawn('nmap', args);
     let out = '';
@@ -140,6 +204,7 @@ async function executeJob(jobId) {
   const delOld = db.prepare('DELETE FROM observed_services WHERE scan_job_id=?');
   delOld.run(jobId);
   parseGrepable(out, jobId, observedAt);
+  syncArpMacs(jobId);
   db.prepare(
     `UPDATE scan_jobs SET status='done', progress='100%', finished_at=datetime('now') WHERE id=?`
   ).run(jobId);

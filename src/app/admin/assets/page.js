@@ -1,14 +1,16 @@
 import Link from 'next/link';
-import { listSubnets } from '../../../lib/assets/repository';
+import { getAssetSummary, listSubnets } from '../../../lib/assets/repository';
 import AssetsAdminClient from '../../../components/AssetsAdminClient';
 
 export const dynamic = 'force-dynamic';
 
 export default function AssetsAdminPage() {
   let subnets = [];
+  let initialSummary = null;
   let loadError = false;
   try {
     subnets = listSubnets();
+    initialSummary = getAssetSummary();
   } catch (err) {
     console.error(err);
     loadError = true;
@@ -33,7 +35,7 @@ export default function AssetsAdminPage() {
           Migrazione asset non applicata o DB non disponibile.
         </p>
       ) : (
-        <AssetsAdminClient initialSubnets={subnets} />
+        <AssetsAdminClient initialSubnets={subnets} initialSummary={initialSummary} />
       )}
     </div>
   );

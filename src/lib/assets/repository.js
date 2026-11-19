@@ -52,12 +52,43 @@ export function getAssetSummary() {
     )
     .get().c;
 
+  const bySubnet = db
+    .prepare(
+      `SELECT s.id, s.family_label, s.cidr,
+        (SELECT COUNT(DISTINCT aia.asset_id) FROM ip_addresses i
+          JOIN asset_ip_assignments aia ON aia.ip_id = i.id WHERE i.subnet_id = s.id) AS assets_count,
+        (SELECT COUNT(*) FROM ip_addresses WHERE subnet_id = s.id) AS ip_count
+       FROM subnets s WHERE s.is_non_ip = 0 AND s.cidr IS NOT NULL
+       ORDER BY s.sort_order`
+    )
+    .all()
+    .map((row) => ({
+      ...row,
+      occupancy_pct: Math.round((row.ip_count / 254) * 1000) / 10,
+    }));
+  const online = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM assets WHERE status='active' AND last_seen_at IS NOT NULL
+       AND datetime(last_seen_at) > datetime('now', '-7 days')`
+    )
+    .get().c;
+  const offline = Math.max(0, assetsActive - online);
+  const recentJobs = db
+    .prepare(
+      `SELECT id, status, target, profile, progress, started_at, finished_at FROM scan_jobs ORDER BY id DESC LIMIT 5`
+    )
+    .all();
+
   return {
     assetsActive,
     byCategory,
     byLocation,
+    bySubnet,
+    online,
+    offline,
     pendingDiscovery,
     lastScan: lastScan || null,
+    recentJobs,
     portDrift: { undeclared, missingExpected },
   };
 }
@@ -104,12 +135,22 @@ export function subnetIpGrid(subnetId) {
   return { subnet, cells };
 }
 
-export function listAssets({ q = '', subnetId = null, status = 'active' } = {}) {
+export function listAssets({
+  q = '',
+  subnetId = null,
+  status = 'active',
+  category = null,
+  location = null,
+  online = null,
+  sort = 'code',
+} = {}) {
   const db = getDb();
   let sql = `
     SELECT a.*, s.family_label AS subnet_label,
       (SELECT GROUP_CONCAT(i.address, ', ') FROM asset_ip_assignments aia
-        JOIN ip_addresses i ON i.id = aia.ip_id WHERE aia.asset_id = a.id) AS ip_list
+        JOIN ip_addresses i ON i.id = aia.ip_id WHERE aia.asset_id = a.id) AS ip_list,
+      CASE WHEN a.last_seen_at IS NOT NULL AND datetime(a.last_seen_at) > datetime('now', '-7 days')
+        THEN 1 ELSE 0 END AS is_online
     FROM assets a
     LEFT JOIN subnets s ON s.id = a.primary_subnet_id
     WHERE a.status = ?
@@ -119,12 +160,27 @@ export function listAssets({ q = '', subnetId = null, status = 'active' } = {}) 
     sql += ` AND a.primary_subnet_id = ?`;
     params.push(subnetId);
   }
+  if (category) {
+    sql += ` AND a.category = ?`;
+    params.push(category);
+  }
+  if (location) {
+    sql += ` AND a.location = ?`;
+    params.push(location);
+  }
+  if (online === '1') {
+    sql += ` AND a.last_seen_at IS NOT NULL AND datetime(a.last_seen_at) > datetime('now', '-7 days')`;
+  }
+  if (online === '0') {
+    sql += ` AND (a.last_seen_at IS NULL OR datetime(a.last_seen_at) <= datetime('now', '-7 days'))`;
+  }
   if (q) {
     sql += ` AND (a.name LIKE ? OR a.hostname LIKE ? OR a.location LIKE ? OR CAST(a.asset_code AS TEXT) LIKE ?)`;
     const like = `%${q}%`;
     params.push(like, like, like, like);
   }
-  sql += ` ORDER BY a.asset_code IS NULL, a.asset_code ASC, a.name ASC`;
+  if (sort === 'name') sql += ` ORDER BY a.name COLLATE NOCASE ASC`;
+  else sql += ` ORDER BY a.asset_code IS NULL, a.asset_code ASC, a.name ASC`;
   return db.prepare(sql).all(...params);
 }
 
@@ -172,7 +228,56 @@ export function getAssetDetail(assetId) {
     .prepare('SELECT tag FROM asset_tags WHERE asset_id = ?')
     .all(assetId)
     .map((r) => r.tag);
-  return { asset, interfaces, ips, fqdns, declared, observed, tags };
+  const scanHistory = db
+    .prepare(
+      `SELECT DISTINCT j.id, j.target, j.profile, j.status, j.finished_at
+       FROM scan_jobs j
+       JOIN observed_services o ON o.scan_job_id = j.id
+       WHERE o.ip_id IN (SELECT ip_id FROM asset_ip_assignments WHERE asset_id=?)
+       ORDER BY j.id DESC LIMIT 10`
+    )
+    .all(assetId);
+  const portRows = correlatePorts(declared, observed);
+  const dashboardLinks = db
+    .prepare('SELECT id, title FROM links WHERE is_folder=0 ORDER BY title')
+    .all();
+  return {
+    asset,
+    interfaces,
+    ips,
+    fqdns,
+    declared,
+    observed,
+    tags,
+    scanHistory,
+    portRows,
+    dashboardLinks,
+  };
+}
+
+function correlatePorts(declared, observed) {
+  const map = new Map();
+  for (const d of declared) {
+    const key = `${d.protocol || 'tcp'}:${d.port}`;
+    map.set(key, { port: d.port, protocol: d.protocol || 'tcp', declared: d, observed: null, status: 'missing' });
+  }
+  for (const o of observed) {
+    const key = `${o.protocol || 'tcp'}:${o.port}`;
+    if (map.has(key)) {
+      const row = map.get(key);
+      row.observed = o;
+      row.status = 'ok';
+    } else {
+      map.set(key, {
+        port: o.port,
+        protocol: o.protocol || 'tcp',
+        declared: null,
+        observed: o,
+        status: 'undeclared',
+      });
+    }
+  }
+  return [...map.values()].sort((a, b) => a.port - b.port);
 }
 
 export function listFqdns() {
