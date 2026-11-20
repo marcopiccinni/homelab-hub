@@ -19,16 +19,16 @@ export async function POST(request, { params }) {
       return Response.json({ ok: true });
     }
     if (action === 'create') {
-      const assetId = createAssetFromDiscovery(id, body);
-      return Response.json({ assetId });
+      const result = createAssetFromDiscovery(id, body);
+      return Response.json({ ok: true, ...result });
     }
     if (action === 'merge') {
       const assetId = parseInt(body.assetId, 10);
       if (Number.isNaN(assetId)) {
         return Response.json({ error: 'assetId richiesto' }, { status: 400 });
       }
-      mergeDiscoveryToAsset(id, assetId);
-      return Response.json({ assetId });
+      const result = mergeDiscoveryToAsset(id, assetId);
+      return Response.json({ ok: true, ...result });
     }
     return Response.json({ error: 'azione non valida' }, { status: 400 });
   } catch (err) {

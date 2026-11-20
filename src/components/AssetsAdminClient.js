@@ -2,29 +2,61 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import AssetDetailPanel from './AssetDetailPanel';
 
-const TABS = [
-  ['summary', 'Riepilogo'],
-  ['subnet', 'Subnet'],
-  ['assets', 'Asset'],
-  ['discovery', 'Coda'],
-  ['fqdn', 'FQDN'],
-  ['import', 'Import'],
-  ['scan', 'Scan'],
-  ['hosts', 'Host'],
+const VALID_TABS = new Set([
+  'summary',
+  'assets',
+  'hosts',
+  'subnet',
+  'fqdn',
+  'discovery',
+  'scan',
+  'mercusys',
+  'import',
+]);
+
+const NAV_GROUPS = [
+  { label: 'Panoramica', tabs: [['summary', 'Riepilogo']] },
+  {
+    label: 'Inventario',
+    tabs: [
+      ['assets', 'Asset'],
+      ['hosts', 'Host'],
+      ['subnet', 'Subnet'],
+      ['fqdn', 'FQDN'],
+    ],
+  },
+  {
+    label: 'Scoperta',
+    tabs: [
+      ['discovery', 'Coda'],
+      ['scan', 'Scansioni'],
+      ['mercusys', 'Router Mercusys'],
+    ],
+  },
+  { label: 'Dati', tabs: [['import', 'Import / Export']] },
 ];
 
 export default function AssetsAdminClient({ initialSubnets = [], initialSummary = null }) {
-  const [tab, setTab] = useState('summary');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [tab, setTab] = useState(() => {
+    const t = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null;
+    return t && VALID_TABS.has(t) ? t : 'summary';
+  });
+  const [toast, setToast] = useState(null);
   const [summary, setSummary] = useState(initialSummary);
   const [subnets] = useState(initialSubnets);
-  const [subnetId, setSubnetId] = useState(
+  const [gridSubnetId, setGridSubnetId] = useState(
     () =>
       initialSubnets.find((s) => s.cidr && !s.is_non_ip)?.id ??
       initialSubnets[0]?.id ??
       null
   );
+  const [assetSubnetFilter, setAssetSubnetFilter] = useState('');
   const [grid, setGrid] = useState(null);
   const [assets, setAssets] = useState([]);
   const [suggestions, setSuggestions] = useState({ categories: [], locations: [] });
@@ -67,6 +99,22 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
     setGrid(await r.json());
   }, []);
 
+  const navigateTab = useCallback(
+    (id) => {
+      if (!VALID_TABS.has(id)) return;
+      setTab(id);
+      const params = new URLSearchParams(searchParams?.toString() || '');
+      params.set('tab', id);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router, pathname]
+  );
+
+  useEffect(() => {
+    const t = searchParams?.get('tab');
+    if (t && VALID_TABS.has(t) && t !== tab) setTab(t);
+  }, [searchParams, tab]);
+
   const loadAssets = useCallback(async () => {
     const params = new URLSearchParams();
     if (q) params.set('q', q);
@@ -74,12 +122,12 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
     if (filters.location) params.set('location', filters.location);
     if (filters.online) params.set('online', filters.online);
     if (filters.sort) params.set('sort', filters.sort);
-    if (subnetId && tab === 'assets') params.set('subnetId', String(subnetId));
+    if (assetSubnetFilter) params.set('subnetId', String(assetSubnetFilter));
     const r = await fetch(`/api/assets?${params}`);
     const data = await r.json();
     setAssets(data.assets || []);
     if (data.suggestions) setSuggestions(data.suggestions);
-  }, [q, subnetId, tab, filters]);
+  }, [q, assetSubnetFilter, filters]);
 
   const loadFqdns = useCallback(async () => {
     const r = await fetch('/api/assets/fqdns');
@@ -144,7 +192,7 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
   }, [loadSummary, loadJobs, loadMercusys]);
 
   useEffect(() => {
-    if (tab === 'subnet' && subnetId) loadGrid(subnetId);
+    if (tab === 'subnet' && gridSubnetId) loadGrid(gridSubnetId);
     if (tab === 'assets') loadAssets();
     if (tab === 'fqdn') loadFqdns();
     if (tab === 'discovery') loadDiscovery();
@@ -152,7 +200,8 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
       loadHosts();
       loadHostSuggestions();
     }
-  }, [tab, subnetId, loadGrid, loadAssets, loadFqdns, loadDiscovery, loadHosts, loadHostSuggestions]);
+    if (tab === 'mercusys') loadMercusys();
+  }, [tab, gridSubnetId, loadGrid, loadAssets, loadFqdns, loadDiscovery, loadHosts, loadHostSuggestions, loadMercusys]);
 
   async function openDetail(id) {
     setDetailId(id);
@@ -181,11 +230,55 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
   }
 
   async function scanSubnetFromGrid() {
-    const subnet = subnets.find((s) => s.id === subnetId);
+    const subnet = subnets.find((s) => s.id === gridSubnetId);
     if (!subnet?.cidr) return;
     setScanTarget(subnet.cidr);
-    setTab('scan');
+    navigateTab('scan');
     setMsg(`Target impostato su ${subnet.cidr}`);
+  }
+
+  async function createAssetForGridIp(address) {
+    if (!address) return;
+    setBusy(true);
+    setMsg('');
+    const name = `Host ${address}`;
+    const r = await fetch('/api/assets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, category: 'altro' }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      setMsg(data.error || 'Creazione asset fallita');
+      setBusy(false);
+      return;
+    }
+    await fetch(`/api/assets/${data.id}/assign-ip`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address }),
+    });
+    await loadGrid(gridSubnetId);
+    await loadSummary();
+    navigateTab('assets');
+    await openDetail(data.id);
+    setToast({
+      text: `Asset creato per ${address}`,
+      href: `/admin/assets/host/${data.id}`,
+      linkLabel: 'Vista host',
+    });
+    setBusy(false);
+  }
+
+  function openAssetFromGrid(cell) {
+    if (cell.assetId) {
+      navigateTab('assets');
+      openDetail(cell.assetId);
+      return;
+    }
+    if (cell.state === 'free') {
+      createAssetForGridIp(cell.address);
+    }
   }
 
   async function onImportPreview(file) {
@@ -232,7 +325,7 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
       setPendingImportFile(null);
       await loadAssets();
       await loadSummary();
-      await loadGrid(subnetId);
+      await loadGrid(gridSubnetId);
     }
     setBusy(false);
   }
@@ -271,15 +364,51 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
 
   async function discoveryAction(id, action, extra = {}) {
     setBusy(true);
+    setToast(null);
     const r = await fetch(`/api/assets/discovery/${id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, ...extra }),
     });
     const data = await r.json();
-    setMsg(data.error || (action === 'create' ? `Asset #${data.assetId}` : 'OK'));
-    await loadDiscovery();
-    await loadSummary();
+    if (!r.ok) {
+      setMsg(data.error || 'Operazione fallita');
+      await loadDiscovery();
+      setBusy(false);
+      return;
+    }
+    if (action === 'dismiss') {
+      setMsg('Voce ignorata');
+      await loadDiscovery();
+      await loadSummary();
+      setBusy(false);
+      return;
+    }
+    const assetId = data.assetId;
+    if (assetId) {
+      setAssetSubnetFilter('');
+      await loadDiscovery();
+      await loadSummary();
+      await loadGrid(gridSubnetId);
+      navigateTab('assets');
+      await loadAssets();
+      await openDetail(assetId);
+      if (data.merged) {
+        setToast({
+          text: `Voce di coda unita all’asset «${data.assetName || assetId}» (MAC già noto)`,
+          href: `/admin/assets/host/${assetId}`,
+          linkLabel: 'Vista host',
+        });
+        setMsg('');
+      } else {
+        setMsg(`Asset «${data.assetName || assetId}» creato dalla coda`);
+        setToast({
+          text: 'Apri l’inventario o la vista host',
+          href: `/admin/assets/host/${assetId}`,
+          linkLabel: 'Vista host',
+        });
+      }
+    }
     setBusy(false);
   }
 
@@ -329,19 +458,36 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
 
   return (
     <div className="admin-assets assets-admin" data-assets-tab={tab}>
-      <nav className="assets-tabs" aria-label="Sezioni asset">
-        {TABS.map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className={tab === id ? 'assets-tab assets-tab-active' : 'assets-tab'}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
+      <nav className="assets-nav" aria-label="Sezioni asset di rete">
+        {NAV_GROUPS.map((group) => (
+          <div key={group.label} className="assets-nav-group">
+            <span className="assets-nav-group-label">{group.label}</span>
+            <div className="assets-tabs" role="tablist">
+              {group.tabs.map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === id}
+                  className={tab === id ? 'assets-tab assets-tab-active' : 'assets-tab'}
+                  onClick={() => navigateTab(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
 
+      {toast ? (
+        <p className="assets-msg assets-toast" role="status">
+          {toast.text}{' '}
+          <Link href={toast.href} className="assets-link-btn">
+            {toast.linkLabel}
+          </Link>
+        </p>
+      ) : null}
       {msg ? (
         <p className="assets-msg" role="status">
           {msg}
@@ -357,8 +503,8 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
           <label className="assets-field">
             Subnet
             <select
-              value={subnetId || ''}
-              onChange={(e) => setSubnetId(parseInt(e.target.value, 10))}
+              value={gridSubnetId || ''}
+              onChange={(e) => setGridSubnetId(parseInt(e.target.value, 10))}
             >
               {subnets
                 .filter((s) => !s.is_non_ip)
@@ -373,9 +519,9 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
             Scan questa subnet
           </button>
           {grid?.cells?.length ? (
-            <div className="ip-grid" data-subnet-id={subnetId}>
+            <div className="ip-grid" data-subnet-id={gridSubnetId}>
               {grid.cells.map((cell) => (
-                <IpGridCell key={cell.host} cell={cell} />
+                <IpGridCell key={cell.host} cell={cell} onActivate={() => openAssetFromGrid(cell)} />
               ))}
             </div>
           ) : (
@@ -431,6 +577,20 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
             <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}>
               <option value="code">Ordina per codice</option>
               <option value="name">Ordina per nome</option>
+            </select>
+            <select
+              value={assetSubnetFilter}
+              onChange={(e) => setAssetSubnetFilter(e.target.value)}
+              aria-label="Filtra subnet inventario"
+            >
+              <option value="">Tutte le subnet</option>
+              {subnets
+                .filter((s) => s.cidr && !s.is_non_ip)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.family_label}
+                  </option>
+                ))}
             </select>
             <button type="button" className="btn-primary assets-btn" onClick={loadAssets}>
               Applica
@@ -591,6 +751,7 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
                       <button
                         type="button"
                         className="btn-secondary assets-btn-sm"
+                        data-testid="discovery-create"
                         onClick={() => discoveryAction(d.id, 'create')}
                       >
                         Crea asset
@@ -660,7 +821,7 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
               Conferma import
             </button>
             {importResult ? (
-              <button type="button" className="assets-link-btn" onClick={() => setTab('assets')}>
+              <button type="button" className="assets-link-btn" onClick={() => navigateTab('assets')}>
                 Vai alla lista asset
               </button>
             ) : null}
@@ -668,46 +829,62 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
           {importResult ? (
             <ImportResultCard stats={importResult} />
           ) : null}
-          <div className="assets-mercusys-box">
-            <h4>Router Mercusys</h4>
-            <p className="assets-muted">
-              Password container:{' '}
-              <strong>{mercusys?.passwordConfigured ? 'configurata' : 'non configurata'}</strong>
-              {mercusys?.mockMode ? ' · MOCK attivo (solo test)' : ''}
+          <section className="assets-section">
+            <h4>Export inventario</h4>
+            <p className="assets-muted">Scarica l’inventario corrente senza passare dalla lista asset.</p>
+            <p>
+              <a className="assets-link-btn" href="/api/assets/export?format=xlsx">
+                Export XLSX
+              </a>
+              {' · '}
+              <a className="assets-link-btn" href="/api/assets/export?format=csv">
+                Export CSV
+              </a>
             </p>
-            <form className="assets-inline-form" onSubmit={saveMercusysUrl}>
-              <input
-                type="url"
-                placeholder="http://192.168.1.1"
-                value={mercusysUrl}
-                onChange={(e) => setMercusysUrl(e.target.value)}
-              />
-              <button type="submit" className="btn-secondary assets-btn-sm">
-                Salva URL
-              </button>
-            </form>
-            {mercusys?.lastError ? (
-              <p className="assets-msg" role="alert">
-                Ultimo errore: {mercusys.lastError}
-              </p>
-            ) : null}
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={busy || !mercusys?.passwordConfigured || !mercusys?.routerUrl}
-              onClick={importMercusys}
-            >
-              Importa client dal router
+          </section>
+        </div>
+      ) : null}
+
+      {tab === 'mercusys' ? (
+        <div className="assets-mercusys-box" data-testid="mercusys-tab">
+          <h4>Router Mercusys</h4>
+          <p className="assets-muted">
+            Password container:{' '}
+            <strong>{mercusys?.passwordConfigured ? 'configurata' : 'non configurata'}</strong>
+            {mercusys?.mockMode ? ' · MOCK attivo (solo test)' : ''}
+          </p>
+          <form className="assets-inline-form" onSubmit={saveMercusysUrl}>
+            <input
+              type="url"
+              placeholder="http://192.168.1.1"
+              value={mercusysUrl}
+              onChange={(e) => setMercusysUrl(e.target.value)}
+            />
+            <button type="submit" className="btn-secondary assets-btn-sm">
+              Salva URL
             </button>
-            <button
-              type="button"
-              className="btn-secondary assets-btn-sm"
-              disabled={busy || !mercusys?.passwordConfigured || !mercusys?.routerUrl}
-              onClick={syncMercusysPresence}
-            >
-              Aggiorna stato dal router
-            </button>
-          </div>
+          </form>
+          {mercusys?.lastError ? (
+            <p className="assets-msg" role="alert">
+              Ultimo errore: {mercusys.lastError}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={busy || !mercusys?.passwordConfigured || !mercusys?.routerUrl}
+            onClick={importMercusys}
+          >
+            Importa client dal router
+          </button>
+          <button
+            type="button"
+            className="btn-secondary assets-btn-sm"
+            disabled={busy || !mercusys?.passwordConfigured || !mercusys?.routerUrl}
+            onClick={syncMercusysPresence}
+          >
+            Aggiorna stato dal router
+          </button>
         </div>
       ) : null}
 
@@ -998,14 +1175,24 @@ function ImportPreviewCard({ preview }) {
   );
 }
 
-function IpGridCell({ cell }) {
+function IpGridCell({ cell, onActivate }) {
+  const title =
+    cell.state === 'free'
+      ? `${cell.address} — libero (clic per creare asset)`
+      : cell.assetName
+        ? `${cell.address} — ${cell.assetName} (clic per dettaglio)`
+        : `${cell.address} — ${cell.state}`;
+  const canActivate = cell.state === 'free' || cell.assetId;
   return (
-    <div
-      className={`ip-cell ip-cell-${cell.state}`}
-      title={cell.assetName ? `${cell.address} — ${cell.assetName}` : cell.address}
+    <button
+      type="button"
+      className={`ip-cell ip-cell-${cell.state} ${canActivate ? 'ip-cell-action' : ''}`}
+      title={title}
       data-host={cell.host}
+      disabled={!canActivate}
+      onClick={() => onActivate?.()}
     >
       {cell.host}
-    </div>
+    </button>
   );
 }

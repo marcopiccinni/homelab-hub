@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { getAssetSummary, listSubnets } from '../../../lib/assets/repository';
 import AssetsAdminClient from '../../../components/AssetsAdminClient';
@@ -35,7 +36,9 @@ export default function AssetsAdminPage() {
           Migrazione asset non applicata o DB non disponibile.
         </p>
       ) : (
-        <AssetsAdminClient initialSubnets={subnets} initialSummary={initialSummary} />
+        <Suspense fallback={<p className="assets-muted">Caricamento asset…</p>}>
+          <AssetsAdminClient initialSubnets={subnets} initialSummary={initialSummary} />
+        </Suspense>
       )}
     </div>
   );

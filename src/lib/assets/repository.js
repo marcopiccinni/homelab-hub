@@ -141,6 +141,7 @@ export function subnetIpGrid(subnetId) {
       state,
       assetName: row?.asset_name || null,
       assetCode: row?.asset_code || null,
+      assetId: row?.asset_id || null,
       ipId: row?.id || null,
     });
   }
@@ -170,8 +171,15 @@ export function listAssets({
   `;
   const params = [status];
   if (subnetId) {
-    sql += ` AND a.primary_subnet_id = ?`;
-    params.push(subnetId);
+    sql += ` AND (
+      a.primary_subnet_id = ?
+      OR EXISTS (
+        SELECT 1 FROM asset_ip_assignments aia
+        JOIN ip_addresses i ON i.id = aia.ip_id
+        WHERE aia.asset_id = a.id AND i.subnet_id = ?
+      )
+    )`;
+    params.push(subnetId, subnetId);
   }
   if (category) {
     sql += ` AND a.category = ?`;

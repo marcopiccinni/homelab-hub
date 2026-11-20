@@ -110,7 +110,7 @@ async function main() {
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-discovery-desktop.png'), fullPage: true });
 
-  await page.locator('button.assets-tab', { hasText: 'Import' }).click();
+  await page.locator('button.assets-tab', { hasText: 'Import / Export' }).click();
   const [fileChooser] = await Promise.all([
     page.waitForEvent('filechooser'),
     page.locator('.assets-import label').first().click(),
@@ -144,13 +144,25 @@ async function main() {
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-host-detail-desktop.png'), fullPage: true });
   await page.goto(`${BASE}/admin/assets`, { waitUntil: 'domcontentloaded' });
 
-  await page.locator('button.assets-tab', { hasText: 'Import' }).click();
-  await page.waitForSelector('.assets-mercusys-box');
+  await page.locator('button.assets-tab', { hasText: 'Router Mercusys' }).click();
+  await page.waitForSelector('[data-testid="mercusys-tab"]');
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-mercusys-settings-desktop.png'), fullPage: true });
   await page.getByRole('button', { name: 'Importa client dal router' }).click();
-  await page.waitForSelector('.assets-msg', { hasText: /(Importati|in coda|aggiornati)/i }, { timeout: 20000 });
+  await page.waitForSelector('.assets-msg', { hasText: /(Importati|in coda|aggiornati|coda)/i }, { timeout: 20000 });
   await page.screenshot({
     path: path.join(ARTIFACTS, 'assets-mercusys-import-desktop.png'),
+    fullPage: true,
+  });
+
+  await page.locator('button.assets-tab', { hasText: 'Coda' }).click();
+  await page.waitForSelector('.assets-discovery', { timeout: 10000 });
+  const createBtn = page.locator('[data-testid="discovery-create"]').first();
+  await createBtn.waitFor({ timeout: 15000 });
+  await createBtn.click();
+  await page.waitForSelector('.assets-detail-card', { timeout: 20000 });
+  await page.locator('.assets-table tbody tr', { hasText: '10.0.5' }).first().waitFor({ timeout: 15000 });
+  await page.screenshot({
+    path: path.join(ARTIFACTS, 'assets-discovery-approve-desktop.png'),
     fullPage: true,
   });
 
