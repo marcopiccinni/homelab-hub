@@ -45,9 +45,12 @@ export function rsaEncryptPkcs1Hex(nHex, eHex, plaintext) {
   return out;
 }
 
+/** Come tplink-deco: esattamente 16 cifre decimali (no zeri iniziali mancanti). */
 export function generateAesKeyIv() {
-  const rnd = () => Math.floor(Math.random() * 9e15) + 1e15;
-  return { key: String(rnd()), iv: String(rnd()) };
+  const MIN = 10 ** 15;
+  const MAX = 10 ** 16 - 1;
+  const rnd = () => String(Math.floor(Math.random() * (MAX - MIN)) + MIN);
+  return { key: rnd(), iv: rnd() };
 }
 
 export function aesCbcEncrypt(keyStr, ivStr, plaintext) {

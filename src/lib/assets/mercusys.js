@@ -14,7 +14,7 @@ import { encryptMercusysPasswordLegacy } from './mercusys-crypto.js';
 import {
   probeDecoFirmware,
   loginDecoLuci,
-  fetchDecoClientList,
+  fetchDecoClientsWithMesh,
 } from './mercusys-deco.js';
 import { mercusysLog } from './mercusys-log.js';
 
@@ -214,7 +214,7 @@ async function loginAndFetchClients(baseUrl, password) {
   if (probe.kind === 'deco_luci') {
     const session = await loginDecoLuci(baseUrl, password);
     if (!session.ok) return session;
-    const list = await fetchDecoClientList(baseUrl, session);
+    const list = await fetchDecoClientsWithMesh(baseUrl, session);
     if (list.ok) {
       const clients = mapClients(list.clients);
       if (!clients.length) {
@@ -226,7 +226,13 @@ async function loginAndFetchClients(baseUrl, password) {
           warning: 'Login OK ma nessun client DHCP connesso',
         };
       }
-      return { ok: true, clients, step: 'done', firmware: 'deco_luci' };
+      return {
+        ok: true,
+        clients,
+        step: 'done',
+        firmware: 'deco_luci',
+        meshNodes: list.meshNodes ?? 0,
+      };
     }
     mercusysLog('warn', 'client_list deco fallita, provo DHCP', list.error);
     if (session.stok) {
