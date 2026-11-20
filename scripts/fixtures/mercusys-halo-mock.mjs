@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Mock Mercusys Halo H1500X — protocollo tpEncrypt (chiavi sintetiche).
- * Rifiuta login con params annidati o sign non-login con k=/i=.
+ * Login richiede params.password; payload piatto -> error_code 1 cifrato.
  */
 import http from 'node:http';
 import { generateKeyPairSync, privateDecrypt, constants, createCipheriv, createDecipheriv } from 'node:crypto';
@@ -168,12 +168,24 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, { error_code: 1, msg: dec.error });
         return;
       }
-      if (dec.json.params != null || dec.json.password == null) {
-        sendJson(res, { error_code: 1, msg: 'login payload must be flat {password,operation}' });
-        return;
-      }
       if (dec.json.operation !== 'login') {
         sendJson(res, { error_code: 1, msg: 'operation must be login' });
+        return;
+      }
+      const pwdField =
+        dec.json.params?.password != null ? dec.json.params.password : dec.json.password;
+      const flatRejected = dec.json.password != null && dec.json.params == null;
+      if (flatRejected) {
+        const errPayload = aesEncrypt(
+          dec.aesKey,
+          dec.aesIv,
+          JSON.stringify({ error_code: 1 })
+        ).toString('base64');
+        sendJson(res, { data: errPayload });
+        return;
+      }
+      if (dec.json.params?.password == null) {
+        sendJson(res, { error_code: 1, msg: 'login requires params.password' });
         return;
       }
       const hash = createHash('md5').update(`admin${SYNTH_PASSWORD}`).digest('hex');
@@ -183,7 +195,7 @@ const server = http.createServer(async (req, res) => {
       }
       let pwdPlain = '';
       try {
-        pwdPlain = rsaDecryptHex(pwdKeys.privateKey, dec.json.password);
+        pwdPlain = rsaDecryptHex(pwdKeys.privateKey, pwdField);
       } catch {
         pwdPlain = '';
       }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Verifica formato tpEncrypt (payload piatto, sign login vs non-login, seq fisso).
+ * Verifica formato tpEncrypt (login con params.password, sign login vs non-login, seq fisso).
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -8,6 +8,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'url';
 import {
+  aesCbcDecrypt,
   aesCbcEncrypt,
   rsaEncryptPkcs1Hex,
   rsaEncryptSignPkcs1Hex,
@@ -49,11 +50,11 @@ const readSign = buildSignText({
 assert.equal(readSign, `h=${hash}&s=${SEQ + 50}`);
 assert.ok(!readSign.includes('k='));
 
-const flatJson = JSON.stringify({
-  password: 'deadbeef',
+const paramsLoginJson = JSON.stringify({
   operation: 'login',
+  params: { password: 'deadbeef' },
 });
-assert.ok(!flatJson.includes('params'));
+assert.ok(paramsLoginJson.includes('params'));
 
 function freePort() {
   return new Promise((res, rej) => {
@@ -112,7 +113,32 @@ const signN = auth.json.result.key[0];
 const signE = auth.json.result.key[1] || '010001';
 const seq = auth.json.result.seq;
 
-const badNested = encodeEncryptedPayload({
+const flatLogin = encodeEncryptedPayload({
+  signN,
+  signE,
+  seq,
+  aesKey,
+  aesIv,
+  username: 'admin',
+  password,
+  payload: {
+    password: rsaEncryptPkcs1Hex(pwdN, pwdE, password),
+    operation: 'login',
+  },
+  isLogin: true,
+});
+
+const flatRes = await fetch(`${base}${loginRoot}?form=login`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Cookie: auth.cookie || keys.cookie || '' },
+  body: flatLogin.body,
+});
+const flatJson = await flatRes.json();
+assert.ok(flatJson.data, 'flat login returns encrypted data');
+const flatDec = JSON.parse(aesCbcDecrypt(aesKey, aesIv, Buffer.from(flatJson.data, 'base64')).toString('utf8'));
+assert.equal(flatDec.error_code, 1);
+
+const goodLogin = encodeEncryptedPayload({
   signN,
   signE,
   seq,
@@ -127,30 +153,6 @@ const badNested = encodeEncryptedPayload({
   isLogin: true,
 });
 
-const badRes = await fetch(`${base}${loginRoot}?form=login`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', Cookie: auth.cookie || keys.cookie || '' },
-  body: badNested.body,
-});
-const badJson = await badRes.json();
-assert.equal(badJson.error_code, 1);
-assert.match(String(badJson.msg || ''), /flat/i);
-
-const goodLogin = encodeEncryptedPayload({
-  signN,
-  signE,
-  seq,
-  aesKey,
-  aesIv,
-  username: 'admin',
-  password,
-  payload: {
-    password: rsaEncryptPkcs1Hex(pwdN, pwdE, password),
-    operation: 'login',
-  },
-  isLogin: true,
-});
-
 const goodRes = await fetch(`${base}${loginRoot}?form=login`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', Cookie: auth.cookie || keys.cookie || '' },
@@ -158,11 +160,14 @@ const goodRes = await fetch(`${base}${loginRoot}?form=login`, {
 });
 const goodJson = await goodRes.json();
 assert.ok(goodJson.data, 'login OK data');
+const goodDec = JSON.parse(aesCbcDecrypt(aesKey, aesIv, Buffer.from(goodJson.data, 'base64')).toString('utf8'));
+assert.equal(goodDec.error_code, 0);
+assert.ok(goodDec.result?.stok);
 
 const badSignBody = (() => {
   const json = JSON.stringify({
-    password: rsaEncryptPkcs1Hex(pwdN, pwdE, password),
     operation: 'login',
+    params: { password: rsaEncryptPkcs1Hex(pwdN, pwdE, password) },
   });
   const data = aesCbcEncrypt(aesKey, aesIv, json).toString('base64');
   const signText = `h=${hash}&s=${seq + data.length}`;

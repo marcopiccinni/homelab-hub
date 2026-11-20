@@ -249,7 +249,7 @@ export async function loginDecoLuci(baseUrl, password, username = DEFAULT_USERNA
 
   let cookie = keysAuth.cookie;
   const passwordEnc = rsaEncryptPkcs1Hex(keysAuth.pwdN, keysAuth.pwdE, password);
-  const loginPayload = { password: passwordEnc, operation: 'login' };
+  const loginPayload = { operation: 'login', params: { password: passwordEnc } };
   const enc = encodeEncryptedPayload({
     signN: keysAuth.signN,
     signE: keysAuth.signE,
@@ -263,7 +263,10 @@ export async function loginDecoLuci(baseUrl, password, username = DEFAULT_USERNA
   });
 
   const loginRes = await postTpEncrypt(baseUrl, `${LUCI_LOGIN_PREFIX}?form=login`, enc.body, cookie);
-  cookie = loginRes.cookie || cookie;
+  if (loginRes.cookie) {
+    cookie = loginRes.cookie;
+    mercusysLog('info', 'deco login: cookie sysauth aggiornato');
+  }
   const loginJson = loginRes.json;
   if (!loginJson || loginJson.data == null || loginJson.data === '') {
     return {
@@ -328,7 +331,10 @@ export async function fetchDecoClientList(baseUrl, session) {
     operation: 'read',
     params: { device_mac: 'default' },
   });
-  if (res.cookie) session.cookie = res.cookie;
+  if (res.cookie) {
+    session.cookie = res.cookie;
+    mercusysLog('info', 'client_list: cookie sysauth aggiornato');
+  }
   if (!res.json?.data) {
     return { ok: false, step: 'client_list', httpStatus: res.status, error: 'Lista client: risposta senza data' };
   }
@@ -338,6 +344,20 @@ export async function fetchDecoClientList(baseUrl, session) {
   } catch {
     return { ok: false, step: 'client_list_decrypt', error: 'Lista client: decifratura fallita' };
   }
+  const ec = decrypted.error_code ?? decrypted.errorcode;
+  if (ec != null && ec !== 0 && ec !== '') {
+    mercusysLog('warn', 'client_list error_code', String(ec));
+  } else {
+    mercusysLog('info', 'client_list error_code', '0');
+  }
+  if (ec !== 0 && ec !== '' && ec != null) {
+    return {
+      ok: false,
+      step: 'client_list',
+      httpStatus: res.status,
+      error: `Lista client rifiutata (error_code ${ec})`,
+    };
+  }
   const list = decrypted.result?.client_list || [];
   return { ok: true, clients: list, step: 'client_list' };
 }
@@ -345,13 +365,25 @@ export async function fetchDecoClientList(baseUrl, session) {
 export async function fetchDecoDeviceList(baseUrl, session) {
   const path = `/cgi-bin/luci/;stok=${session.stok}/admin/device?form=device_list`;
   const res = await postEncryptedLuci(baseUrl, session, path, { operation: 'read' });
-  if (res.cookie) session.cookie = res.cookie;
-  if (!res.json?.data) return { ok: false, devices: [] };
+  if (res.cookie) {
+    session.cookie = res.cookie;
+    mercusysLog('info', 'device_list: cookie sysauth aggiornato');
+  }
+  if (!res.json?.data) return { ok: false, devices: [], step: 'device_list' };
   try {
     const decrypted = decryptResponseData(session.aesKey, session.aesIv, res.json.data);
+    const ec = decrypted.error_code ?? decrypted.errorcode;
+    if (ec != null && ec !== 0 && ec !== '') {
+      mercusysLog('warn', 'device_list error_code', String(ec));
+    } else {
+      mercusysLog('info', 'device_list error_code', '0');
+    }
+    if (ec !== 0 && ec !== '' && ec != null) {
+      return { ok: false, devices: [], step: 'device_list', error: `device_list error_code ${ec}` };
+    }
     return { ok: true, devices: decrypted.result?.device_list || [] };
   } catch {
-    return { ok: false, devices: [] };
+    return { ok: false, devices: [], step: 'device_list_decrypt' };
   }
 }
 
