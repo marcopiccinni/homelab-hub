@@ -25,6 +25,7 @@ function md5AdminPassword(username, password) {
 }
 
 function extractCookie(res) {
+  if (!res?.headers) return null;
   const setCookie = res.headers.getSetCookie?.() || [];
   const fromSet =
     setCookie
@@ -33,6 +34,26 @@ function extractCookie(res) {
   const fromHeader = res.headers.get('set-cookie')?.match(/sysauth=[^;]+/)?.[0];
   return fromSet || fromHeader || null;
 }
+
+/** Header Cookie per fetch Node (nessun jar automatico). */
+function cookieHeader(cookie) {
+  if (!cookie) return undefined;
+  if (cookie.startsWith('sysauth=')) return cookie;
+  return `sysauth=${cookie}`;
+}
+
+function mergeSysauthCookie(current, resOrPost) {
+  if (resOrPost?.cookie) return resOrPost.cookie;
+  const fromHeaders = extractCookie(resOrPost);
+  if (fromHeaders) return fromHeaders;
+  return current;
+}
+
+function emptyEncryptedData(json) {
+  return json == null || json.data === '' || json.data == null;
+}
+
+const SESSION_INVALID_MSG = 'Sessione non valida (cookie sysauth mancante?)';
 
 function buildSignText({ isLogin, aesKey, aesIv, authHash, seq, dataBase64Len }) {
   const s = seq + dataBase64Len;
@@ -124,7 +145,8 @@ async function postRaw(baseUrl, path, body, cookie, contentType) {
     Accept: 'application/json, text/plain, */*',
     'Content-Type': contentType,
   };
-  if (cookie) headers.Cookie = cookie;
+  const cookieHdr = cookieHeader(cookie);
+  if (cookieHdr) headers.Cookie = cookieHdr;
   const res = await fetch(url, {
     method: 'POST',
     headers,
@@ -263,9 +285,9 @@ export async function loginDecoLuci(baseUrl, password, username = DEFAULT_USERNA
   });
 
   const loginRes = await postTpEncrypt(baseUrl, `${LUCI_LOGIN_PREFIX}?form=login`, enc.body, cookie);
-  if (loginRes.cookie) {
-    cookie = loginRes.cookie;
-    mercusysLog('info', 'deco login: cookie sysauth aggiornato');
+  cookie = mergeSysauthCookie(cookie, loginRes);
+  if (cookie?.startsWith('sysauth=')) {
+    mercusysLog('info', 'deco login: cookie sysauth ricevuto');
   }
   const loginJson = loginRes.json;
   if (!loginJson || loginJson.data == null || loginJson.data === '') {
@@ -294,6 +316,16 @@ export async function loginDecoLuci(baseUrl, password, username = DEFAULT_USERNA
   if (!stok) {
     return { ok: false, step: 'deco_login_stok', error: 'Login riuscito ma token stok assente', clients: [] };
   }
+  if (!cookie?.startsWith('sysauth=')) {
+    mercusysLog('warn', 'deco login: sysauth assente — le richieste post-login falliranno');
+    return {
+      ok: false,
+      step: 'deco_login_cookie',
+      error:
+        'Login riuscito ma il router non ha restituito il cookie sysauth (necessario per client_list)',
+      clients: [],
+    };
+  }
   mercusysLog('info', 'deco login OK', `stok=${String(stok).slice(0, 6)}…`);
   return {
     ok: true,
@@ -311,6 +343,16 @@ export async function loginDecoLuci(baseUrl, password, username = DEFAULT_USERNA
 }
 
 async function postEncryptedLuci(baseUrl, session, path, payload) {
+  if (!session.cookie?.startsWith('sysauth=')) {
+    return {
+      ok: false,
+      status: 0,
+      json: { data: '' },
+      text: '',
+      cookie: session.cookie,
+      sessionError: SESSION_INVALID_MSG,
+    };
+  }
   const enc = encodeEncryptedPayload({
     signN: session.signN,
     signE: session.signE,
@@ -331,12 +373,17 @@ export async function fetchDecoClientList(baseUrl, session) {
     operation: 'read',
     params: { device_mac: 'default' },
   });
-  if (res.cookie) {
-    session.cookie = res.cookie;
-    mercusysLog('info', 'client_list: cookie sysauth aggiornato');
+  if (res.sessionError) {
+    return { ok: false, step: 'client_list_session', error: res.sessionError };
   }
-  if (!res.json?.data) {
-    return { ok: false, step: 'client_list', httpStatus: res.status, error: 'Lista client: risposta senza data' };
+  session.cookie = mergeSysauthCookie(session.cookie, res);
+  if (emptyEncryptedData(res.json)) {
+    return {
+      ok: false,
+      step: 'client_list_session',
+      httpStatus: res.status,
+      error: SESSION_INVALID_MSG,
+    };
   }
   let decrypted;
   try {
@@ -365,25 +412,32 @@ export async function fetchDecoClientList(baseUrl, session) {
 export async function fetchDecoDeviceList(baseUrl, session) {
   const path = `/cgi-bin/luci/;stok=${session.stok}/admin/device?form=device_list`;
   const res = await postEncryptedLuci(baseUrl, session, path, { operation: 'read' });
-  if (res.cookie) {
-    session.cookie = res.cookie;
-    mercusysLog('info', 'device_list: cookie sysauth aggiornato');
+  if (res.sessionError) {
+    mercusysLog('info', 'device_list saltato', res.sessionError);
+    return { ok: true, devices: [], optional: true };
   }
-  if (!res.json?.data) return { ok: false, devices: [], step: 'device_list' };
+  session.cookie = mergeSysauthCookie(session.cookie, res);
+  if (emptyEncryptedData(res.json)) {
+    mercusysLog('info', 'device_list: data vuota (opzionale, nessun mesh nel mock)');
+    return { ok: true, devices: [], optional: true };
+  }
   try {
     const decrypted = decryptResponseData(session.aesKey, session.aesIv, res.json.data);
     const ec = decrypted.error_code ?? decrypted.errorcode;
-    if (ec != null && ec !== 0 && ec !== '') {
-      mercusysLog('warn', 'device_list error_code', String(ec));
-    } else {
-      mercusysLog('info', 'device_list error_code', '0');
+    const success = decrypted.success;
+    if (decrypted.result?.device_list) {
+      mercusysLog('info', 'device_list error_code', ec != null ? String(ec) : '0');
+      return { ok: true, devices: decrypted.result.device_list };
     }
-    if (ec !== 0 && ec !== '' && ec != null) {
-      return { ok: false, devices: [], step: 'device_list', error: `device_list error_code ${ec}` };
-    }
-    return { ok: true, devices: decrypted.result?.device_list || [] };
-  } catch {
-    return { ok: false, devices: [], step: 'device_list_decrypt' };
+    mercusysLog(
+      'info',
+      'device_list opzionale senza result',
+      `success=${success} errorcode=${ec ?? 'n/a'}`
+    );
+    return { ok: true, devices: [], optional: true };
+  } catch (err) {
+    mercusysLog('info', 'device_list: decifratura fallita (opzionale)', err instanceof Error ? err.message : '');
+    return { ok: true, devices: [], optional: true };
   }
 }
 
@@ -391,7 +445,7 @@ export async function fetchDecoClientsWithMesh(baseUrl, session) {
   const list = await fetchDecoClientList(baseUrl, session);
   if (!list.ok) return list;
   const devices = await fetchDecoDeviceList(baseUrl, session);
-  if (devices.ok && devices.devices.length) {
+  if (devices.devices?.length) {
     mercusysLog('info', 'mesh device_list', `${devices.devices.length} nodi`);
   }
   return { ...list, meshNodes: devices.devices?.length || 0 };

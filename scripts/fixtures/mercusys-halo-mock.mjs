@@ -223,7 +223,7 @@ const server = http.createServer(async (req, res) => {
       const auth = cookieValue(req);
       const session = auth && sessions.get(auth);
       if (!session) {
-        sendJson(res, { error_code: 1, msg: 'missing session' });
+        sendJson(res, { data: '' });
         return;
       }
       const tp = parseTpBody(body);
@@ -236,19 +236,45 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, { error_code: 1, msg: dec.error });
         return;
       }
-      const clients =
-        form === 'client_list'
-          ? [
-              { name: 'c3ludGgtbGFuLWE=', ip: '10.0.5.10', mac: '02:11:22:33:44:55' },
-              { name: 'c3ludGgtbGFuLWI=', ip: '10.0.5.11', mac: '02:11:22:33:44:56' },
-            ]
-          : [{ device_model: 'SYNTH-XR', mac: '02:AA:BB:CC:DD:01' }];
-      const result =
-        form === 'client_list' ? { client_list: clients } : { device_list: clients };
+      if (form === 'client_list') {
+        const clients = [
+          {
+            name: 'c3ludGgtbGFuLWE=',
+            ip: '10.0.5.10',
+            mac: '02-11-22-33-44-55',
+            online: '1',
+            connection_type: 'wired',
+            wire_type: 'ethernet',
+            interface: 'lan',
+            access_host: '02-AA-BB-CC-DD-01',
+            client_type: 'phone',
+            client_mesh: '0',
+          },
+          {
+            name: 'c3ludGgtbGFuLWI=',
+            ip: '10.0.5.11',
+            mac: '02-11-22-33-44-56',
+            online: '1',
+            connection_type: 'wireless',
+            wire_type: 'wifi',
+            interface: 'host',
+            access_host: '02-AA-BB-CC-DD-01',
+            client_type: 'pc',
+            client_mesh: '0',
+          },
+        ];
+        const payload = aesEncrypt(
+          session.aesKey,
+          session.aesIv,
+          JSON.stringify({ error_code: 0, result: { client_list: clients } })
+        ).toString('base64');
+        sendJson(res, { data: payload });
+        return;
+      }
       const payload = aesEncrypt(
         session.aesKey,
         session.aesIv,
-        JSON.stringify({ error_code: 0, result })
+        JSON.stringify({ success: true, errorcode: 0 })
       ).toString('base64');
       sendJson(res, { data: payload });
       return;

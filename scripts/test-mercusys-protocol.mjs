@@ -183,6 +183,15 @@ const badSignRes = await fetch(`${base}${loginRoot}?form=login`, {
 const badSignJson = await badSignRes.json();
 assert.equal(badSignJson.error_code, 1);
 
+const stok = goodDec.result.stok;
+const noCookieList = await fetch(`${base}/cgi-bin/luci/;stok=${stok}/admin/client?form=client_list`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: 'sign=00&data=',
+});
+const noCookieJson = await noCookieList.json();
+assert.equal(noCookieJson.data, '');
+
 const readEnc = encodeEncryptedPayload({
   signN,
   signE,

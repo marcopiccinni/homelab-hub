@@ -48,12 +48,51 @@ export function mercusysStatus() {
   };
 }
 
-function mapClients(rows) {
-  return rows.map((r) => ({
-    hostname: decodeClientName(r.hostname || r.name || ''),
+function decoClientNotes(meta) {
+  const parts = [];
+  if (meta.online != null && meta.online !== '') parts.push(`online=${meta.online}`);
+  if (meta.connection_type) parts.push(`conn=${meta.connection_type}`);
+  if (meta.wire_type) parts.push(`wire=${meta.wire_type}`);
+  if (meta.interface) parts.push(`if=${meta.interface}`);
+  if (meta.access_host) parts.push(`mesh_host=${meta.access_host}`);
+  if (meta.client_type) parts.push(`type=${meta.client_type}`);
+  return parts.length ? parts.join(', ') : '';
+}
+
+function mapDecoClientRow(r) {
+  const hostname = decodeClientName(r.hostname || r.name || '');
+  const accessHost = normalizeMac(r.access_host) || (r.access_host ? String(r.access_host) : null);
+  const meta = {
+    online: r.online,
+    connection_type: r.connection_type,
+    wire_type: r.wire_type,
+    interface: r.interface,
+    access_host: accessHost,
+    client_type: r.client_type,
+  };
+  return {
+    hostname,
     ip: r.ip || r.ipaddr || r.ip_address || '',
     mac: normalizeMac(r.mac || r.hwaddr || r.macaddr || '') || null,
-  }));
+    meta,
+    notes: decoClientNotes(meta),
+  };
+}
+
+function mapClients(rows) {
+  return rows.map((r) => {
+    const isDeco =
+      r.client_type != null ||
+      r.access_host != null ||
+      r.connection_type != null ||
+      r.wire_type != null;
+    if (isDeco) return mapDecoClientRow(r);
+    return {
+      hostname: decodeClientName(r.hostname || r.name || ''),
+      ip: r.ip || r.ipaddr || r.ip_address || '',
+      mac: normalizeMac(r.mac || r.hwaddr || r.macaddr || '') || null,
+    };
+  });
 }
 
 function decodeClientName(raw) {
@@ -324,7 +363,8 @@ export function importMercusysClientsToQueue() {
         .prepare(`SELECT 1 FROM discovery_queue WHERE ip_address=? AND status='pending'`)
         .get(c.ip);
       if (dup) continue;
-      ins.run(c.ip, c.mac, c.hostname || null, note);
+      const rowNote = [note, c.notes].filter(Boolean).join(' · ');
+      ins.run(c.ip, c.mac, c.hostname || null, rowNote || note);
       imported += 1;
     }
     return { ...result, imported };

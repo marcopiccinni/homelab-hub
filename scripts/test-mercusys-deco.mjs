@@ -48,6 +48,10 @@ assert.equal(result.ok, true, JSON.stringify(result));
 assert.equal(result.firmware, 'deco_luci');
 assert.ok(result.clients.length >= 2, 'clients');
 assert.ok(result.clients.some((c) => c.ip === '10.0.5.10'));
+const lanA = result.clients.find((c) => c.ip === '10.0.5.10');
+assert.equal(lanA?.hostname, 'synth-lan-a');
+assert.equal(lanA?.mac, '02:11:22:33:44:55');
+assert.ok(lanA?.notes?.includes('mesh_host='));
 
 mock.kill('SIGTERM');
 console.log('test-mercusys-deco: OK');
