@@ -297,9 +297,33 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
         'Mock disabilitato in produzione: imposta MERCUSYS_MOCK=1 solo per test. Nessun client importato.'
       );
     } else {
-      setMsg(`Importati ${data.imported || 0} client dal router in coda`);
+      const parts = [];
+      if (data.updated) parts.push(`${data.updated} asset aggiornati`);
+      if (data.imported) parts.push(`${data.imported} in coda`);
+      setMsg(parts.length ? parts.join(' · ') : 'Nessun nuovo client; asset noti aggiornati se online sul router');
     }
     await loadDiscovery();
+    await loadAssets();
+    await loadSummary();
+    setBusy(false);
+  }
+
+  async function syncMercusysPresence() {
+    setBusy(true);
+    const r = await fetch('/api/assets/mercusys/sync', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok || !data.ok) {
+      const detail = [data.step, data.error].filter(Boolean).join(' — ');
+      setMsg(detail || 'Sync router fallita');
+    } else {
+      setMsg(
+        data.updated
+          ? `Stato aggiornato per ${data.updated} asset (router)`
+          : 'Nessun asset noto con MAC online sul router'
+      );
+    }
+    await loadAssets();
+    await loadSummary();
     setBusy(false);
   }
 
@@ -396,10 +420,13 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
             <select
               value={filters.online}
               onChange={(e) => setFilters({ ...filters, online: e.target.value })}
+              title="Stato di rilevazione in rete (scan o router), non alimentazione dispositivo"
             >
-              <option value="">Online + offline</option>
-              <option value="1">Solo online (7gg)</option>
-              <option value="0">Solo offline</option>
+              <option value="">Tutti gli stati</option>
+              <option value="1">Online (7 gg)</option>
+              <option value="stale">Non visti di recente</option>
+              <option value="never">Mai rilevati</option>
+              <option value="not_online">Non online (non visti + mai rilevati)</option>
             </select>
             <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}>
               <option value="code">Ordina per codice</option>
@@ -407,6 +434,15 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
             </select>
             <button type="button" className="btn-primary assets-btn" onClick={loadAssets}>
               Applica
+            </button>
+            <button
+              type="button"
+              className="btn-secondary assets-btn"
+              disabled={busy || !mercusys?.passwordConfigured || !mercusys?.routerUrl}
+              title="Legge la lista client dal router e aggiorna last_seen degli asset con MAC nota"
+              onClick={syncMercusysPresence}
+            >
+              Aggiorna stato dal router
             </button>
             <button type="button" className="btn-secondary assets-btn" onClick={() => setShowCreate((v) => !v)}>
               Nuovo asset
@@ -418,6 +454,11 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
               Export CSV
             </a>
           </div>
+
+          <p className="assets-muted assets-presence-legend">
+            <strong>Stato rete:</strong> riflette l’ultima vista in scansione nmap/ARP o sync Mercusys — non l’alimentazione
+            del dispositivo. Excel da solo → spesso «Mai rilevato». Passa il mouse sul badge per data e fonte.
+          </p>
 
           {showCreate ? (
             <form className="assets-create-form" onSubmit={createAsset}>
@@ -464,7 +505,7 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
                   <th>IP</th>
                   <th>Categoria</th>
                   <th>Posizione</th>
-                  <th>Online</th>
+                  <th title="Ultima rilevazione in rete (scan/router), ultimi 7 gg = Online">Stato rete</th>
                   <th>Host</th>
                 </tr>
               </thead>
@@ -481,9 +522,7 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
                     <td>{a.category || '—'}</td>
                     <td>{a.location || '—'}</td>
                     <td>
-                      <span className={a.is_online ? 'assets-badge assets-badge-ok' : 'assets-badge assets-badge-muted'}>
-                        {a.is_online ? 'Online' : 'Offline'}
-                      </span>
+                      <PresenceBadge asset={a} />
                     </td>
                     <td>
                       <Link
@@ -660,6 +699,14 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
             >
               Importa client dal router
             </button>
+            <button
+              type="button"
+              className="btn-secondary assets-btn-sm"
+              disabled={busy || !mercusys?.passwordConfigured || !mercusys?.routerUrl}
+              onClick={syncMercusysPresence}
+            >
+              Aggiorna stato dal router
+            </button>
           </div>
         </div>
       ) : null}
@@ -794,8 +841,13 @@ function AssetsSummaryPanel({ summary }) {
     <>
       <div className="assets-summary-grid">
         <StatCard value={summary.assetsActive} label="Asset attivi" />
-        <StatCard value={summary.online} label="Online (7 gg)" />
-        <StatCard value={summary.offline} label="Offline" />
+        <StatCard value={summary.online} label="Online (7 gg)" title="Visti da scan o router negli ultimi 7 giorni" />
+        <StatCard
+          value={summary.presenceStale ?? summary.offline}
+          label="Non visti di recente"
+          title="Ultima rilevazione oltre 7 giorni fa"
+        />
+        <StatCard value={summary.presenceNever ?? 0} label="Mai rilevati" title="Nessuna scansione/router su questo asset" />
         <StatCard value={summary.pendingDiscovery} label="Coda nuovi device" />
         <StatCard value={summary.portDrift?.undeclared ?? 0} label="Porte non documentate" />
         <StatCard value={summary.portDrift?.missingExpected ?? 0} label="Porte attese assenti" />
@@ -862,9 +914,26 @@ function AssetsSummaryPanel({ summary }) {
   );
 }
 
-function StatCard({ value, label }) {
+function PresenceBadge({ asset }) {
+  const status = asset.presence_status || (asset.is_online ? 'online' : asset.last_seen_at ? 'stale' : 'never');
+  const label = asset.presence_label || (status === 'online' ? 'Online' : status === 'never' ? 'Mai rilevato' : 'Non visto');
+  const tip = asset.presence_tooltip || '';
+  const cls =
+    status === 'online'
+      ? 'assets-badge-ok'
+      : status === 'stale'
+        ? 'assets-badge-warn'
+        : 'assets-badge-muted';
   return (
-    <div className="assets-stat-card">
+    <span className={`assets-badge ${cls}`} title={tip}>
+      {label}
+    </span>
+  );
+}
+
+function StatCard({ value, label, title }) {
+  return (
+    <div className="assets-stat-card" title={title || undefined}>
       <span className="assets-stat-value">{value}</span>
       <span className="assets-stat-label">{label}</span>
     </div>

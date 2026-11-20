@@ -18,7 +18,7 @@ export async function GET(request) {
     subnetId: subnetId ? parseInt(subnetId, 10) : null,
     category: category || null,
     location: location || null,
-    online: online === '1' || online === '0' ? online : null,
+    online: online || null,
     sort,
     status,
   });

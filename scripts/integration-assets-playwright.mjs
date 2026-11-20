@@ -98,6 +98,9 @@ async function main() {
 
   await page.locator('button.assets-tab', { hasText: 'Asset' }).click();
   await page.locator('.assets-table tbody tr').first().waitFor({ timeout: 10000 });
+  const listBody = await page.locator('.assets-table tbody').innerText();
+  assert.ok(!listBody.includes('Offline'), 'non deve mostrare etichetta Offline');
+  assert.ok(listBody.includes('Mai rilevato') || listBody.includes('Online'), 'badge presenza rete');
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-list-desktop.png'), fullPage: true });
   await page.locator('.assets-table tbody tr').first().click();
   await page.waitForSelector('.assets-detail-card');
@@ -145,7 +148,7 @@ async function main() {
   await page.waitForSelector('.assets-mercusys-box');
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-mercusys-settings-desktop.png'), fullPage: true });
   await page.getByRole('button', { name: 'Importa client dal router' }).click();
-  await page.waitForSelector('.assets-msg', { hasText: /Importati \d+ client/ }, { timeout: 20000 });
+  await page.waitForSelector('.assets-msg', { hasText: /(Importati|in coda|aggiornati)/i }, { timeout: 20000 });
   await page.screenshot({
     path: path.join(ARTIFACTS, 'assets-mercusys-import-desktop.png'),
     fullPage: true,

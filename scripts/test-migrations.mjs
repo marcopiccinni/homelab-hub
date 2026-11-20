@@ -53,8 +53,13 @@ const live = new Database(dbPath);
 runMigrations(live, dbPath);
 
 const version = live.pragma('user_version', { simple: true });
-if (version !== 6) {
-  console.error('Expected user_version 6, got', version);
+if (version !== 7) {
+  console.error('Expected user_version 7, got', version);
+  process.exit(1);
+}
+const assetCols = live.prepare('PRAGMA table_info(assets)').all().map((c) => c.name);
+if (!assetCols.includes('last_seen_source')) {
+  console.error('Migration 007: last_seen_source missing');
   process.exit(1);
 }
 

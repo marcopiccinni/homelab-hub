@@ -3,7 +3,6 @@
  * Password solo da env; URL da DB o env.
  */
 
-import { getDb } from '../db.js';
 import { normalizeMac } from './mac.js';
 import {
   getMercusysRouterUrl,
@@ -18,6 +17,8 @@ import {
 } from './mercusys-deco.js';
 import { mercusysLog } from './mercusys-log.js';
 import { getMercusysTimeoutMs, isMercusysTimeoutError } from './mercusys-fetch.js';
+import { getDb } from '../db.js';
+import { touchAssetPresence, upsertObservedIpForAsset } from './asset-touch.js';
 
 const MOCK_CLIENTS = [
   { hostname: 'synth-phone', ip: '10.0.4.88', mac: '02:00:00:00:00:01' },
@@ -71,13 +72,81 @@ function mapDecoClientRow(r) {
     access_host: accessHost,
     client_type: r.client_type,
   };
+  const routerOnline =
+    r.online === '1' ||
+    r.online === 1 ||
+    r.online === true ||
+    r.online === 'true' ||
+    r.online === 'online';
   return {
     hostname,
     ip: r.ip || r.ipaddr || r.ip_address || '',
     mac: normalizeMac(r.mac || r.hwaddr || r.macaddr || '') || null,
     meta,
     notes: decoClientNotes(meta),
+    routerOnline,
   };
+}
+
+function isRouterClientOnline(c) {
+  const o = c.routerOnline ?? c.meta?.online;
+  return o === '1' || o === 1 || o === true || o === 'true' || o === 'online';
+}
+
+/**
+ * Aggiorna asset noti per MAC (router online) e opzionalmente accoda nuovi IP.
+ */
+export function applyMercusysClientRecords(clients, { queueNew = true } = {}) {
+  const db = getDb();
+  const findByMac = db.prepare(
+    `SELECT ai.asset_id FROM asset_interfaces ai
+     JOIN assets a ON a.id = ai.asset_id
+     WHERE ai.mac_address = ? AND a.status = 'active' LIMIT 1`
+  );
+  const ins = db.prepare(`
+    INSERT INTO discovery_queue (ip_address, mac_address, hostname, first_seen_at, last_seen_at, status, notes)
+    VALUES (?, ?, ?, datetime('now'), datetime('now'), 'pending', ?)
+  `);
+  const noteBase = 'Import Mercusys';
+  let updated = 0;
+  let imported = 0;
+
+  const tx = db.transaction(() => {
+    for (const c of clients) {
+      if (!c.ip) continue;
+      const mac = c.mac ? normalizeMac(c.mac) : null;
+      let assetId = null;
+      if (mac) {
+        const hit = findByMac.get(mac);
+        if (hit) assetId = hit.asset_id;
+      }
+      if (assetId) {
+        if (isRouterClientOnline(c)) {
+          touchAssetPresence(db, assetId, 'mercusys');
+          upsertObservedIpForAsset(db, assetId, c.ip);
+          updated += 1;
+        }
+        continue;
+      }
+      if (!queueNew) continue;
+      const knownIp = db
+        .prepare(
+          'SELECT 1 FROM asset_ip_assignments aia JOIN ip_addresses i ON i.id=aia.ip_id WHERE i.address=?'
+        )
+        .get(c.ip);
+      if (knownIp) continue;
+      const dup = db
+        .prepare(`SELECT 1 FROM discovery_queue WHERE ip_address=? AND status='pending'`)
+        .get(c.ip);
+      if (dup) continue;
+      const rowNote = [noteBase, c.notes].filter(Boolean).join(' · ');
+      ins.run(c.ip, mac, c.hostname || null, rowNote || noteBase);
+      imported += 1;
+    }
+  });
+  tx();
+  if (updated) mercusysLog('info', 'sync mercusys asset noti', `${updated} aggiornati`);
+  return { updated, imported };
 }
 
 function mapClients(rows) {
@@ -350,30 +419,17 @@ export async function fetchMercusysClients() {
 
 export function importMercusysClientsToQueue() {
   return fetchMercusysClients().then((result) => {
-    if (!result.ok) return { ...result, imported: 0 };
-    const db = getDb();
-    const note = result.mock ? 'Import Mercusys (mock)' : 'Import Mercusys';
-    const ins = db.prepare(`
-      INSERT INTO discovery_queue (ip_address, mac_address, hostname, first_seen_at, last_seen_at, status, notes)
-      VALUES (?, ?, ?, datetime('now'), datetime('now'), 'pending', ?)
-    `);
-    let imported = 0;
-    for (const c of result.clients) {
-      if (!c.ip) continue;
-      const known = db
-        .prepare(
-          'SELECT 1 FROM asset_ip_assignments aia JOIN ip_addresses i ON i.id=aia.ip_id WHERE i.address=?'
-        )
-        .get(c.ip);
-      if (known) continue;
-      const dup = db
-        .prepare(`SELECT 1 FROM discovery_queue WHERE ip_address=? AND status='pending'`)
-        .get(c.ip);
-      if (dup) continue;
-      const rowNote = [note, c.notes].filter(Boolean).join(' · ');
-      ins.run(c.ip, c.mac, c.hostname || null, rowNote || note);
-      imported += 1;
-    }
-    return { ...result, imported };
+    if (!result.ok) return { ...result, imported: 0, updated: 0 };
+    const { updated, imported } = applyMercusysClientRecords(result.clients, { queueNew: true });
+    return { ...result, updated, imported };
+  });
+}
+
+/** Solo aggiorna presenza/IP degli asset già noti (nessuna nuova coda). */
+export function syncMercusysPresenceFromRouter() {
+  return fetchMercusysClients().then((result) => {
+    if (!result.ok) return { ...result, updated: 0, imported: 0 };
+    const { updated } = applyMercusysClientRecords(result.clients, { queueNew: false });
+    return { ...result, updated, imported: 0 };
   });
 }

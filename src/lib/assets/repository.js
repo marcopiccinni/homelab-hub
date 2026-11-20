@@ -1,5 +1,6 @@
 import { getDb } from '../db.js';
 import { hostOctet, ipInCidr } from './private-ip.js';
+import { enrichAssetPresence, presenceTooltip } from './presence.js';
 
 export function listSubnets() {
   const db = getDb();
@@ -72,7 +73,15 @@ export function getAssetSummary() {
        AND datetime(last_seen_at) > datetime('now', '-7 days')`
     )
     .get().c;
-  const offline = Math.max(0, assetsActive - online);
+  const presenceStale = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM assets WHERE status='active' AND last_seen_at IS NOT NULL
+       AND datetime(last_seen_at) <= datetime('now', '-7 days')`
+    )
+    .get().c;
+  const presenceNever = db
+    .prepare(`SELECT COUNT(*) AS c FROM assets WHERE status='active' AND last_seen_at IS NULL`)
+    .get().c;
   const recentJobs = db
     .prepare(
       `SELECT id, status, target, profile, progress, started_at, finished_at FROM scan_jobs ORDER BY id DESC LIMIT 5`
@@ -85,7 +94,10 @@ export function getAssetSummary() {
     byLocation,
     bySubnet,
     online,
-    offline,
+    presenceStale,
+    presenceNever,
+    /** @deprecated usa presenceStale + presenceNever */
+    offline: presenceStale + presenceNever,
     pendingDiscovery,
     lastScan: lastScan || null,
     recentJobs,
@@ -150,7 +162,8 @@ export function listAssets({
       (SELECT GROUP_CONCAT(i.address, ', ') FROM asset_ip_assignments aia
         JOIN ip_addresses i ON i.id = aia.ip_id WHERE aia.asset_id = a.id) AS ip_list,
       CASE WHEN a.last_seen_at IS NOT NULL AND datetime(a.last_seen_at) > datetime('now', '-7 days')
-        THEN 1 ELSE 0 END AS is_online
+        THEN 1 ELSE 0 END AS is_online,
+      a.last_seen_source
     FROM assets a
     LEFT JOIN subnets s ON s.id = a.primary_subnet_id
     WHERE a.status = ?
@@ -170,8 +183,11 @@ export function listAssets({
   }
   if (online === '1') {
     sql += ` AND a.last_seen_at IS NOT NULL AND datetime(a.last_seen_at) > datetime('now', '-7 days')`;
-  }
-  if (online === '0') {
+  } else if (online === 'stale') {
+    sql += ` AND a.last_seen_at IS NOT NULL AND datetime(a.last_seen_at) <= datetime('now', '-7 days')`;
+  } else if (online === 'never') {
+    sql += ` AND a.last_seen_at IS NULL`;
+  } else if (online === '0' || online === 'not_online') {
     sql += ` AND (a.last_seen_at IS NULL OR datetime(a.last_seen_at) <= datetime('now', '-7 days'))`;
   }
   if (q) {
@@ -181,7 +197,7 @@ export function listAssets({
   }
   if (sort === 'name') sql += ` ORDER BY a.name COLLATE NOCASE ASC`;
   else sql += ` ORDER BY a.asset_code IS NULL, a.asset_code ASC, a.name ASC`;
-  return db.prepare(sql).all(...params);
+  return db.prepare(sql).all(...params).map(enrichAssetPresence);
 }
 
 export function getAssetDetail(assetId) {
@@ -241,8 +257,10 @@ export function getAssetDetail(assetId) {
   const dashboardLinks = db
     .prepare('SELECT id, title FROM links WHERE is_folder=0 ORDER BY title')
     .all();
+  const assetEnriched = enrichAssetPresence(asset);
   return {
-    asset,
+    asset: assetEnriched,
+    presence_tooltip: presenceTooltip(asset.last_seen_at, asset.last_seen_source),
     interfaces,
     ips,
     fqdns,

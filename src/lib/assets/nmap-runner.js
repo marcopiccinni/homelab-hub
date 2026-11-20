@@ -3,6 +3,7 @@ import { getDb } from '../db.js';
 import { assertScanTargetAllowed, isPrivateIPv4 } from './private-ip.js';
 import { resolveSubnetIdForIp } from './repository.js';
 import { normalizeMac } from './mac.js';
+import { touchAssetPresence, touchAssetPresenceAt } from './asset-touch.js';
 import dns from 'node:dns/promises';
 
 const MAX_CONCURRENT = 1;
@@ -24,10 +25,12 @@ async function resolveTargetHost(target) {
 }
 
 function touchAssetLastSeenForIp(db, ipId, observedAt) {
-  db.prepare(
-    `UPDATE assets SET last_seen_at=?
-     WHERE id IN (SELECT asset_id FROM asset_ip_assignments WHERE ip_id=?)`
-  ).run(observedAt, ipId);
+  const rows = db
+    .prepare(`SELECT asset_id FROM asset_ip_assignments WHERE ip_id=?`)
+    .all(ipId);
+  for (const r of rows) {
+    touchAssetPresenceAt(db, r.asset_id, 'scan', observedAt);
+  }
 }
 
 function syncArpMacs(jobId) {
@@ -66,7 +69,7 @@ function syncArpMacs(jobId) {
     const hit = findIface.get(mac);
     if (hit?.asset_id) {
       assignIpStmt.run(hit.asset_id, ipRow.id);
-      db.prepare(`UPDATE assets SET last_seen_at=datetime('now') WHERE id=?`).run(hit.asset_id);
+      touchAssetPresence(db, hit.asset_id, 'scan');
     }
   }
 }

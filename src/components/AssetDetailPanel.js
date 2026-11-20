@@ -133,7 +133,15 @@ export default function AssetDetailPanel({ detail, onClose, onRefresh, setMsg, s
         <section className="assets-section">
           <h4>Identità</h4>
           {asset.hostname ? <p>Hostname: {asset.hostname}</p> : null}
-          <p className="assets-muted-sm">Stato: {asset.status}</p>
+          <p className="assets-muted-sm">Stato catalogo: {asset.status}</p>
+          <p className="assets-muted-sm" title={detail.presence_tooltip || asset.presence_tooltip || ''}>
+            Rete:{' '}
+            <strong>
+              {asset.presence_label ||
+                (asset.last_seen_at ? `visto ${asset.last_seen_at}` : 'Mai rilevato')}
+            </strong>
+            {asset.last_seen_source ? ` · fonte ${asset.last_seen_source}` : ''}
+          </p>
           {asset.description ? <p>{asset.description}</p> : <p className="assets-empty">Nessuna descrizione</p>}
         </section>
       )}
