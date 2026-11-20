@@ -17,7 +17,7 @@
     "test:integration-card-titles": "node scripts/integration-card-titles-playwright.mjs",
     "test:migration-005": "node scripts/test-migration-005.mjs",
     "test:integration-assets": "node scripts/integration-assets-playwright.mjs",
-    "test:mercusys": "node scripts/test-mercusys.mjs && node scripts/test-mercusys-deco.mjs",
+    "test:mercusys": "node scripts/test-mercusys.mjs && node scripts/test-mercusys-protocol.mjs && node scripts/test-mercusys-deco.mjs",
     "test:excel-import": "node scripts/test-excel-import-real-shape.mjs",
     "test": "npm run test:migrations && npm run test:migration-004 && npm run test:migration-005 && npm run test:mercusys && npm run test:excel-import && npm run test:environment && npm run test:image && npm run test:dashboard-reorder",
     "audit:uploads": "node scripts/audit-empty-uploads.mjs",

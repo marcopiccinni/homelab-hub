@@ -4,6 +4,7 @@ import {
   aesCbcEncrypt,
   generateAesKeyIv,
   rsaEncryptPkcs1Hex,
+  rsaEncryptSignPkcs1Hex,
 } from './mercusys-crypto.js';
 import { mercusysLog } from './mercusys-log.js';
 
@@ -19,6 +20,10 @@ function parseJsonSafe(text) {
   }
 }
 
+function md5AdminPassword(username, password) {
+  return createHash('md5').update(`${username}${password}`, 'utf8').digest('hex');
+}
+
 function extractCookie(res) {
   const setCookie = res.headers.getSetCookie?.() || [];
   const fromSet =
@@ -29,31 +34,39 @@ function extractCookie(res) {
   return fromSet || fromHeader || null;
 }
 
-function compactJson(obj) {
-  return JSON.stringify(obj);
+function buildSignText({ isLogin, aesKey, aesIv, authHash, seq, dataBase64Len }) {
+  const s = seq + dataBase64Len;
+  if (isLogin) {
+    return `k=${aesKey}&i=${aesIv}&h=${authHash}&s=${s}`;
+  }
+  return `h=${authHash}&s=${s}`;
 }
 
-function encodeSign({ signN, signE, aesKey, aesIv, seq, username, password, dataLen }) {
-  const authHash = createHash('md5').update(`${username}${password}`, 'utf8').digest('hex');
-  const signText = `k=${aesKey}&i=${aesIv}&h=${authHash}&s=${seq + dataLen}`;
-  return rsaEncryptPkcs1Hex(signN, signE, signText);
-}
-
-function encodeEncryptedPayload({ signN, signE, seq, aesKey, aesIv, username, password, payload }) {
-  const json = compactJson(payload);
+function encodeEncryptedPayload({
+  signN,
+  signE,
+  seq,
+  aesKey,
+  aesIv,
+  username,
+  password,
+  payload,
+  isLogin,
+}) {
+  const json = JSON.stringify(payload);
   const encrypted = aesCbcEncrypt(aesKey, aesIv, json);
   const data = encrypted.toString('base64');
-  const sign = encodeSign({
-    signN,
-    signE,
+  const authHash = md5AdminPassword(username, password);
+  const signText = buildSignText({
+    isLogin,
     aesKey,
     aesIv,
+    authHash,
     seq,
-    username,
-    password,
-    dataLen: data.length,
+    dataBase64Len: data.length,
   });
-  return { sign, data, body: `sign=${sign}&data=${encodeURIComponent(data)}`, nextSeq: seq + data.length };
+  const sign = rsaEncryptSignPkcs1Hex(signN, signE, signText);
+  return { sign, data, body: `sign=${sign}&data=${encodeURIComponent(data)}` };
 }
 
 function decryptResponseData(aesKey, aesIv, dataB64) {
@@ -62,11 +75,54 @@ function decryptResponseData(aesKey, aesIv, dataB64) {
   return JSON.parse(raw.toString('utf8'));
 }
 
-async function postFormUrl(baseUrl, path, body, cookie) {
+function mapLoginError(decrypted, httpStatus) {
+  const errorCode = decrypted.error_code ?? decrypted.errorcode;
+  if (errorCode === -5002 || errorCode === '-5002') {
+    const attempts = decrypted.result?.attemptsAllowed ?? decrypted.result?.failureCount;
+    const extra = attempts != null ? ` (tentativi rimasti: ${attempts})` : '';
+    return {
+      ok: false,
+      step: 'password_invalid',
+      httpStatus,
+      error: `Password errata${extra}`,
+      clients: [],
+    };
+  }
+  if (errorCode === -5003 || errorCode === '-5003') {
+    return {
+      ok: false,
+      step: 'login_locked',
+      httpStatus,
+      error: 'Troppi tentativi falliti: accesso temporaneamente bloccato sul router',
+      clients: [],
+    };
+  }
+  if (errorCode === 1 || errorCode === '1') {
+    return {
+      ok: false,
+      step: 'deco_login_rejected',
+      httpStatus,
+      error: 'Login rifiutato (formato o credenziali non accettate, codice 1)',
+      clients: [],
+    };
+  }
+  if (errorCode !== 0 && errorCode !== '' && errorCode != null) {
+    return {
+      ok: false,
+      step: 'deco_login_rejected',
+      httpStatus,
+      error: `Login rifiutato (codice ${errorCode})`,
+      clients: [],
+    };
+  }
+  return null;
+}
+
+async function postRaw(baseUrl, path, body, cookie, contentType) {
   const url = `${baseUrl}${path}`;
   const headers = {
     Accept: 'application/json, text/plain, */*',
-    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+    'Content-Type': contentType,
   };
   if (cookie) headers.Cookie = cookie;
   const res = await fetch(url, {
@@ -85,14 +141,37 @@ async function postFormUrl(baseUrl, path, body, cookie) {
   };
 }
 
-/** Halo H1500X: keys/auth richiedono POST `operation=read` (GET risponde error_code 1). */
-async function fetchLuciKeysAndAuth(baseUrl, cookie) {
-  const keysRes = await postFormUrl(
+async function postFormUrl(baseUrl, path, body, cookie) {
+  return postRaw(baseUrl, path, body, cookie, 'application/x-www-form-urlencoded; charset=UTF-8');
+}
+
+/** jQuery ajax: Content-Type application/json con body urlencoded sign&data. */
+async function postTpEncrypt(baseUrl, path, body, cookie) {
+  let res = await postRaw(baseUrl, path, body, cookie, 'application/json');
+  if (!res.json && res.status >= 400) {
+    mercusysLog('warn', 'POST con Content-Type json fallito, fallback form-urlencoded');
+    res = await postFormUrl(baseUrl, path, body, cookie);
+  }
+  return res;
+}
+
+async function postLuciJson(baseUrl, path, jsonBody, cookie) {
+  const res = await postRaw(
     baseUrl,
-    `${LUCI_LOGIN_PREFIX}?form=keys`,
-    'operation=read',
-    cookie
+    path,
+    typeof jsonBody === 'string' ? jsonBody : JSON.stringify(jsonBody),
+    cookie,
+    'application/json;charset=UTF-8'
   );
+  if (!res.json) {
+    const fallback = await postFormUrl(baseUrl, path, 'operation=read', cookie);
+    return fallback;
+  }
+  return res;
+}
+
+async function fetchLuciKeysAndAuth(baseUrl, cookie) {
+  const keysRes = await postLuciJson(baseUrl, `${LUCI_LOGIN_PREFIX}?form=keys`, { operation: 'read' }, cookie);
   const keysJson = keysRes.json;
   if (!keysJson || keysJson.error_code !== 0) {
     return {
@@ -116,12 +195,7 @@ async function fetchLuciKeysAndAuth(baseUrl, cookie) {
   }
   cookie = keysRes.cookie || cookie;
 
-  const authRes = await postFormUrl(
-    baseUrl,
-    `${LUCI_LOGIN_PREFIX}?form=auth`,
-    'operation=read',
-    cookie
-  );
+  const authRes = await postLuciJson(baseUrl, `${LUCI_LOGIN_PREFIX}?form=auth`, { operation: 'read' }, cookie);
   const authJson = authRes.json;
   if (!authJson || authJson.error_code !== 0) {
     return {
@@ -162,9 +236,6 @@ export async function probeDecoFirmware(baseUrl) {
     mercusysLog('info', 'firmware deco/halo luci (POST form=keys OK)');
     return { kind: 'deco_luci', keysStatus: keys.status };
   }
-  if (keys.json?.error_code === 1) {
-    mercusysLog('warn', 'GET-style keys rejected; use POST operation=read');
-  }
   return { kind: 'unknown', keysStatus: keys.status, preview: keys.text?.slice(0, 120) };
 }
 
@@ -178,7 +249,7 @@ export async function loginDecoLuci(baseUrl, password, username = DEFAULT_USERNA
 
   let cookie = keysAuth.cookie;
   const passwordEnc = rsaEncryptPkcs1Hex(keysAuth.pwdN, keysAuth.pwdE, password);
-  const loginPayload = { params: { password: passwordEnc }, operation: 'login' };
+  const loginPayload = { password: passwordEnc, operation: 'login' };
   const enc = encodeEncryptedPayload({
     signN: keysAuth.signN,
     signE: keysAuth.signE,
@@ -188,14 +259,10 @@ export async function loginDecoLuci(baseUrl, password, username = DEFAULT_USERNA
     username,
     password,
     payload: loginPayload,
+    isLogin: true,
   });
 
-  const loginRes = await postFormUrl(
-    baseUrl,
-    `${LUCI_LOGIN_PREFIX}?form=login`,
-    enc.body,
-    cookie
-  );
+  const loginRes = await postTpEncrypt(baseUrl, `${LUCI_LOGIN_PREFIX}?form=login`, enc.body, cookie);
   cookie = loginRes.cookie || cookie;
   const loginJson = loginRes.json;
   if (!loginJson || loginJson.data == null || loginJson.data === '') {
@@ -205,8 +272,9 @@ export async function loginDecoLuci(baseUrl, password, username = DEFAULT_USERNA
       httpStatus: loginRes.status,
       error:
         loginJson?.data === ''
-          ? 'Login: risposta data vuota (password errata o payload non accettato)'
+          ? 'Login: risposta data vuota'
           : `Login: risposta senza campo data (HTTP ${loginRes.status})`,
+      clients: [],
     };
   }
   let decrypted;
@@ -216,26 +284,10 @@ export async function loginDecoLuci(baseUrl, password, username = DEFAULT_USERNA
     mercusysLog('error', 'deco login decrypt failed', err instanceof Error ? err.message : String(err));
     return { ok: false, step: 'deco_login_decrypt', error: 'Login: impossibile decifrare la risposta', clients: [] };
   }
-  const errorCode = decrypted.error_code ?? decrypted.errorcode;
-  if (errorCode === -5002 || errorCode === '-5002') {
-    return {
-      ok: false,
-      step: 'password_invalid',
-      httpStatus: loginRes.status,
-      error: 'Password errata (credenziali rifiutate dal router)',
-      clients: [],
-    };
-  }
-  if (errorCode !== 0 && errorCode !== '' && errorCode != null) {
-    return {
-      ok: false,
-      step: 'deco_login_rejected',
-      httpStatus: loginRes.status,
-      error: `Login rifiutato (codice ${errorCode})`,
-      clients: [],
-    };
-  }
-  const stok = decrypted.result?.stok;
+  const loginErr = mapLoginError(decrypted, loginRes.status);
+  if (loginErr) return loginErr;
+
+  const stok = decrypted.result?.stok ?? decrypted.data?.stok;
   if (!stok) {
     return { ok: false, step: 'deco_login_stok', error: 'Login riuscito ma token stok assente', clients: [] };
   }
@@ -249,7 +301,7 @@ export async function loginDecoLuci(baseUrl, password, username = DEFAULT_USERNA
     aesIv,
     signN: keysAuth.signN,
     signE: keysAuth.signE,
-    seq: enc.nextSeq,
+    seq: keysAuth.seq,
     username,
     password,
   };
@@ -265,11 +317,9 @@ async function postEncryptedLuci(baseUrl, session, path, payload) {
     username: session.username,
     password: session.password,
     payload,
+    isLogin: false,
   });
-  session.seq = enc.nextSeq;
-  const res = await postFormUrl(baseUrl, path, enc.body, session.cookie);
-  if (res.cookie) session.cookie = res.cookie;
-  return res;
+  return postTpEncrypt(baseUrl, path, enc.body, session.cookie);
 }
 
 export async function fetchDecoClientList(baseUrl, session) {
@@ -278,6 +328,7 @@ export async function fetchDecoClientList(baseUrl, session) {
     operation: 'read',
     params: { device_mac: 'default' },
   });
+  if (res.cookie) session.cookie = res.cookie;
   if (!res.json?.data) {
     return { ok: false, step: 'client_list', httpStatus: res.status, error: 'Lista client: risposta senza data' };
   }
@@ -294,6 +345,7 @@ export async function fetchDecoClientList(baseUrl, session) {
 export async function fetchDecoDeviceList(baseUrl, session) {
   const path = `/cgi-bin/luci/;stok=${session.stok}/admin/device?form=device_list`;
   const res = await postEncryptedLuci(baseUrl, session, path, { operation: 'read' });
+  if (res.cookie) session.cookie = res.cookie;
   if (!res.json?.data) return { ok: false, devices: [] };
   try {
     const decrypted = decryptResponseData(session.aesKey, session.aesIv, res.json.data);
@@ -312,3 +364,5 @@ export async function fetchDecoClientsWithMesh(baseUrl, session) {
   }
   return { ...list, meshNodes: devices.devices?.length || 0 };
 }
+
+export { encodeEncryptedPayload, buildSignText, md5AdminPassword };

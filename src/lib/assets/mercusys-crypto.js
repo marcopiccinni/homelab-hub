@@ -31,7 +31,7 @@ export function rsaPublicKeyFromHex(nHex, eHex) {
   });
 }
 
-/** PKCS#1 v1.5 RSA, blocchi concatenati in hex (stile TP-Link Deco). */
+/** PKCS#1 v1.5 RSA password (chiave 1024 bit), blocchi da (modulus-11) byte. */
 export function rsaEncryptPkcs1Hex(nHex, eHex, plaintext) {
   const key = rsaPublicKeyFromHex(nHex, eHex);
   const nBytes = Buffer.from(nHex, 'hex').length;
@@ -40,17 +40,33 @@ export function rsaEncryptPkcs1Hex(nHex, eHex, plaintext) {
   let out = '';
   for (let i = 0; i < input.length; i += blockSize) {
     const chunk = input.subarray(i, i + blockSize);
-    out += publicEncrypt({ key, padding: constants.RSA_PKCS1_PADDING }, chunk).toString('hex');
+    const hex = publicEncrypt({ key, padding: constants.RSA_PKCS1_PADDING }, chunk).toString('hex');
+    out += hex.length % 2 === 0 ? hex : `0${hex}`;
   }
   return out;
 }
 
-/** Come tplink-deco: esattamente 16 cifre decimali (no zeri iniziali mancanti). */
+/** Firma tpEncrypt: chiave 512 bit, max 2 blocchi da 53 caratteri ciascuno. */
+const SIGN_PLAINTEXT_CHUNK = 53;
+
+export function rsaEncryptSignPkcs1Hex(nHex, eHex, signText) {
+  const key = rsaPublicKeyFromHex(nHex, eHex);
+  const enc = (s) => {
+    const hex = publicEncrypt(
+      { key, padding: constants.RSA_PKCS1_PADDING },
+      Buffer.from(s, 'utf8')
+    ).toString('hex');
+    return hex.length % 2 === 0 ? hex : `0${hex}`;
+  };
+  const t = String(signText);
+  if (t.length <= SIGN_PLAINTEXT_CHUNK) return enc(t);
+  return enc(t.slice(0, SIGN_PLAINTEXT_CHUNK)) + enc(t.slice(SIGN_PLAINTEXT_CHUNK));
+}
+
+/** Come tpEncrypt.genKey: 16 caratteri da timestamp + random. */
 export function generateAesKeyIv() {
-  const MIN = 10 ** 15;
-  const MAX = 10 ** 16 - 1;
-  const rnd = () => String(Math.floor(Math.random() * (MAX - MIN)) + MIN);
-  return { key: rnd(), iv: rnd() };
+  const gen = () => ((Date.now() + '') + String(1e9 * Math.random())).substr(0, 16);
+  return { key: gen(), iv: gen() };
 }
 
 export function aesCbcEncrypt(keyStr, ivStr, plaintext) {
