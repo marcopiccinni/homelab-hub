@@ -98,10 +98,28 @@ async function main() {
   ]);
   await fileChooser.setFiles(FIXTURE);
   await page.locator('[data-testid="import-preview"]').waitFor({ timeout: 15000 });
+  const previewText = await page.locator('[data-testid="import-preview"]').innerText();
+  assert.match(
+    previewText,
+    /Asset in anteprima:\s+[1-9]/,
+    'anteprima import deve contare asset sintetici'
+  );
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-import-preview-desktop.png'), fullPage: true });
   await page.getByRole('button', { name: 'Conferma import' }).click();
   await page.waitForSelector('[data-testid="import-result"]', { timeout: 20000 });
+  await page.locator('.assets-msg', { hasText: 'Import completato' }).waitFor({ timeout: 15000 });
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-import-success-desktop.png'), fullPage: true });
+
+  await page.locator('button.assets-tab', { hasText: 'Asset' }).click();
+  await page.waitForFunction(
+    () => document.querySelectorAll('.assets-table tbody tr').length >= 3,
+    { timeout: 15000 }
+  );
+  await page.screenshot({ path: path.join(ARTIFACTS, 'assets-list-after-import-desktop.png'), fullPage: true });
+
+  await page.locator('button.assets-tab', { hasText: 'Import' }).click();
+  await page.waitForSelector('.assets-mercusys-box');
+  await page.screenshot({ path: path.join(ARTIFACTS, 'assets-mercusys-settings-desktop.png'), fullPage: true });
 
   const mob = await browser.newContext({
     ...devices['iPhone 12'],

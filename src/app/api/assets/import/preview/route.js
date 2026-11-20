@@ -10,6 +10,12 @@ export async function POST(request) {
     return Response.json({ error: 'File mancante' }, { status: 400 });
   }
   const buf = Buffer.from(await file.arrayBuffer());
-  const preview = parseWorkbookPreview(buf, listSubnets());
-  return Response.json(preview);
+  try {
+    const preview = parseWorkbookPreview(buf, listSubnets());
+    return Response.json(preview);
+  } catch (err) {
+    console.error('[assets/import/preview]', err);
+    const message = err instanceof Error ? err.message : String(err);
+    return Response.json({ error: `Anteprima fallita: ${message}` }, { status: 400 });
+  }
 }
