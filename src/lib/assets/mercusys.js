@@ -17,6 +17,7 @@ import {
   fetchDecoClientsWithMesh,
 } from './mercusys-deco.js';
 import { mercusysLog } from './mercusys-log.js';
+import { getMercusysTimeoutMs, isMercusysTimeoutError } from './mercusys-fetch.js';
 
 const MOCK_CLIENTS = [
   { hostname: 'synth-phone', ip: '10.0.4.88', mac: '02:00:00:00:00:01' },
@@ -314,7 +315,7 @@ export async function fetchMercusysClients() {
     };
   }
   try {
-    mercusysLog('info', `fetch clients ${url}`);
+    mercusysLog('info', `fetch clients ${url}`, `timeout ${getMercusysTimeoutMs()}ms`);
     const result = await loginAndFetchClients(url.replace(/\/$/, ''), password);
     if (!result.ok) {
       setMercusysLastError(`${result.step}: ${result.error}`);
@@ -330,6 +331,12 @@ export async function fetchMercusysClients() {
     return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (err?.code === 'MERCUSYS_TIMEOUT' || err?.step?.endsWith('_timeout') || isMercusysTimeoutError(err)) {
+      const step = err.step || 'mercusys_timeout';
+      setMercusysLastError(`${step}: ${message}`);
+      mercusysLog('error', step, message);
+      return { ok: false, step, error: message, clients: [] };
+    }
     setMercusysLastError(`router_unreachable: ${message}`);
     mercusysLog('error', 'router_unreachable', message);
     return {
