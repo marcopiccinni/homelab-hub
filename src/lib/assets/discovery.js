@@ -1,6 +1,7 @@
 import { getDb } from '../db.js';
 import { normalizeMac } from './mac.js';
 import { createAsset, addInterface, assignIp } from './crud.js';
+import { findActiveAssetIdByIp, findActiveAssetIdByMac } from './asset-merge.js';
 import { resolveSubnetIdForIp } from './repository.js';
 import { touchAssetPresence } from './asset-touch.js';
 
@@ -20,17 +21,6 @@ export function listDiscoveryQueue(status = 'pending') {
 
 export function dismissDiscovery(id) {
   getDb().prepare(`UPDATE discovery_queue SET status='dismissed' WHERE id=?`).run(id);
-}
-
-function findActiveAssetByMac(db, mac) {
-  if (!mac) return null;
-  return db
-    .prepare(
-      `SELECT a.id, a.name FROM asset_interfaces ai
-       JOIN assets a ON a.id = ai.asset_id
-       WHERE ai.mac_address = ? AND a.status = 'active' LIMIT 1`
-    )
-    .get(mac);
 }
 
 function applyDiscoveryRowToAsset(db, row, assetId) {
@@ -71,9 +61,18 @@ export function createAssetFromDiscovery(id, fields = {}) {
   if (row.status !== 'pending') throw new Error('Voce già gestita');
 
   const mac = row.mac_address ? normalizeMac(row.mac_address) : null;
-  const existing = findActiveAssetByMac(db, mac);
-  if (existing) {
+  const byMacId = findActiveAssetIdByMac(db, mac);
+  if (byMacId) {
+    const existing = db.prepare('SELECT id, name FROM assets WHERE id=?').get(byMacId);
     applyDiscoveryRowToAsset(db, row, existing.id);
+    db.prepare(`UPDATE discovery_queue SET status='merged' WHERE id=?`).run(id);
+    return { assetId: existing.id, merged: true, assetName: existing.name };
+  }
+
+  const byIpId = row.ip_address ? findActiveAssetIdByIp(db, row.ip_address) : null;
+  if (byIpId) {
+    const existing = db.prepare('SELECT id, name FROM assets WHERE id=?').get(byIpId);
+    applyDiscoveryRowToAsset(db, row, byIpId);
     db.prepare(`UPDATE discovery_queue SET status='merged' WHERE id=?`).run(id);
     return { assetId: existing.id, merged: true, assetName: existing.name };
   }

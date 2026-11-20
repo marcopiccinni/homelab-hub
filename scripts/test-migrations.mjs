@@ -53,13 +53,20 @@ const live = new Database(dbPath);
 runMigrations(live, dbPath);
 
 const version = live.pragma('user_version', { simple: true });
-if (version !== 7) {
-  console.error('Expected user_version 7, got', version);
+if (version !== 8) {
+  console.error('Expected user_version 8, got', version);
   process.exit(1);
 }
 const assetCols = live.prepare('PRAGMA table_info(assets)').all().map((c) => c.name);
 if (!assetCols.includes('last_seen_source')) {
   console.error('Migration 007: last_seen_source missing');
+  process.exit(1);
+}
+const mergeLog = live
+  .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='asset_merge_log'`)
+  .get();
+if (!mergeLog) {
+  console.error('Migration 008: asset_merge_log missing');
   process.exit(1);
 }
 

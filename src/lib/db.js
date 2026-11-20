@@ -55,6 +55,15 @@ export function getDb() {
 
   dbInstance = db;
   initDbPath = dbPath;
+
+  queueMicrotask(() => {
+    import('./assets/nmap-runner.js')
+      .then((m) => m.bootstrapScanWorker())
+      .catch((err) => {
+        console.warn('Scan worker bootstrap skipped:', err instanceof Error ? err.message : err);
+      });
+  });
+
   return dbInstance;
 }
 

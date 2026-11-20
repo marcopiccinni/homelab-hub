@@ -334,9 +334,22 @@ export function upsertAssetFromImport(row, subnetByCidr) {
     if (!assetId && row.mac) {
       const hit = db
         .prepare(
-          `SELECT ai.asset_id FROM asset_interfaces ai WHERE ai.mac_address = ? LIMIT 1`
+          `SELECT ai.asset_id FROM asset_interfaces ai
+           JOIN assets a ON a.id = ai.asset_id AND a.status='active'
+           WHERE ai.mac_address = ? LIMIT 1`
         )
         .get(row.mac);
+      if (hit) assetId = hit.asset_id;
+    }
+    if (!assetId && row.ip) {
+      const hit = db
+        .prepare(
+          `SELECT aia.asset_id FROM ip_addresses i
+           JOIN asset_ip_assignments aia ON aia.ip_id = i.id
+           JOIN assets a ON a.id = aia.asset_id AND a.status='active'
+           WHERE i.address = ? LIMIT 1`
+        )
+        .get(row.ip);
       if (hit) assetId = hit.asset_id;
     }
     if (!assetId) {

@@ -9,6 +9,7 @@ import * as m004 from './004_fix_access_type_with_external.js';
 import * as m005 from './005_asset_management.js';
 import * as m006 from './006_asset_settings_cleanup.js';
 import * as m007 from './007_asset_presence.js';
+import * as m008 from './008_asset_dedup.js';
 
 const migrationsDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -20,6 +21,7 @@ const MIGRATIONS = [
   { version: 5, file: '005_asset_management.js', up: m005.up },
   { version: 6, file: '006_asset_settings_cleanup.js', up: m006.up },
   { version: 7, file: '007_asset_presence.js', up: m007.up },
+  { version: 8, file: '008_asset_dedup.js', up: m008.up },
 ];
 
 function getBackupDir(dataDir) {

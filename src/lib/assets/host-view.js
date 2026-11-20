@@ -208,22 +208,29 @@ export function getHostView(assetId) {
 export function listHostsSummary({ subnetId = null, q = '' } = {}) {
   const db = getDb();
   let sql = `
-    SELECT DISTINCT a.id, a.asset_code, a.name, a.category, a.primary_subnet_id,
+    SELECT a.id, a.asset_code, a.name, a.category, a.primary_subnet_id,
       (SELECT GROUP_CONCAT(i.address, ', ')
        FROM asset_ip_assignments aia JOIN ip_addresses i ON i.id = aia.ip_id
-       WHERE aia.asset_id = a.id) AS ip_list
+       WHERE aia.asset_id = a.id ORDER BY i.address) AS ip_list
     FROM assets a
-    JOIN asset_ip_assignments aia ON aia.asset_id = a.id
-    JOIN ip_addresses i ON i.id = aia.ip_id
     WHERE a.status = 'active'
+      AND EXISTS (
+        SELECT 1 FROM asset_ip_assignments aia
+        JOIN ip_addresses i ON i.id = aia.ip_id
+        WHERE aia.asset_id = a.id
   `;
   const params = [];
   if (subnetId) {
     sql += ' AND i.subnet_id = ?';
     params.push(subnetId);
   }
+  sql += `)`;
   if (q) {
-    sql += ` AND (a.name LIKE ? OR CAST(a.asset_code AS TEXT) LIKE ? OR i.address LIKE ?)`;
+    sql += ` AND (a.name LIKE ? OR CAST(a.asset_code AS TEXT) LIKE ? OR EXISTS (
+      SELECT 1 FROM asset_ip_assignments aia2
+      JOIN ip_addresses i2 ON i2.id = aia2.ip_id
+      WHERE aia2.asset_id = a.id AND i2.address LIKE ?
+    ))`;
     const like = `%${q}%`;
     params.push(like, like, like);
   }

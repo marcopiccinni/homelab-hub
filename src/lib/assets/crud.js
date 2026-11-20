@@ -1,6 +1,7 @@
 import { getDb } from '../db.js';
 import { normalizeMac } from './mac.js';
 import { resolveSubnetIdForIp } from './repository.js';
+import { findActiveAssetIdByIp, mergeAssetInto } from './asset-merge.js';
 
 const CATEGORIES = [
   'router',
@@ -99,7 +100,7 @@ export function deleteInterface(id) {
   getDb().prepare('DELETE FROM asset_interfaces WHERE id=?').run(id);
 }
 
-export function assignIp(assetId, address) {
+export function assignIp(assetId, address, options = {}) {
   const db = getDb();
   const subnetId = resolveSubnetIdForIp(address);
   db.prepare(
@@ -107,9 +108,27 @@ export function assignIp(assetId, address) {
      ON CONFLICT(address) DO UPDATE SET subnet_id=excluded.subnet_id`
   ).run(address, subnetId);
   const ipId = db.prepare('SELECT id FROM ip_addresses WHERE address=?').get(address).id;
-  db.prepare(
-    `INSERT OR IGNORE INTO asset_ip_assignments (asset_id, ip_id) VALUES (?, ?)`
-  ).run(assetId, ipId);
+  const holder = db
+    .prepare(
+      `SELECT asset_id FROM asset_ip_assignments aia
+       JOIN assets a ON a.id = aia.asset_id AND a.status='active'
+       WHERE aia.ip_id=? LIMIT 1`
+    )
+    .get(ipId);
+  if (holder && holder.asset_id !== assetId) {
+    if (options.mergeDuplicate !== false) {
+      mergeAssetInto(db, assetId, holder.asset_id, {
+        reason: 'assign_ip',
+        matchKey: `ip:${address}`,
+      });
+    } else {
+      throw new Error(`IP ${address} già assegnato ad asset #${holder.asset_id}`);
+    }
+  }
+  db.prepare(`INSERT OR IGNORE INTO asset_ip_assignments (asset_id, ip_id) VALUES (?, ?)`).run(
+    assetId,
+    ipId
+  );
   return ipId;
 }
 

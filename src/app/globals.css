@@ -1557,6 +1557,88 @@ button:active {
   font-size: 0.85rem;
 }
 
+.assets-warn {
+  border-left: 4px solid var(--md-sys-color-error);
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-3);
+}
+
+.assets-jobs-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-4) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.assets-job-card {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  background: var(--md-sys-color-surface-container-low);
+}
+
+.assets-job-running {
+  border-color: var(--md-sys-color-primary);
+}
+
+.assets-job-failed,
+.assets-job-stale {
+  border-color: var(--md-sys-color-error);
+}
+
+.assets-job-done {
+  opacity: 0.92;
+}
+
+.assets-job-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.assets-job-status {
+  font-weight: 600;
+}
+
+.assets-job-target {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+}
+
+.assets-job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  font-size: 0.8rem;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-top: var(--space-2);
+}
+
+.assets-job-progress {
+  margin-top: var(--space-2);
+  font-size: 0.85rem;
+  color: var(--md-sys-color-primary);
+}
+
+.assets-job-error {
+  margin-top: var(--space-2);
+  font-size: 0.85rem;
+  color: var(--md-sys-color-error);
+}
+
+.assets-job-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
 @media (max-width: 768px) {
   .assets-desktop-only {
     display: none;

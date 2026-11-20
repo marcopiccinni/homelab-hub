@@ -61,6 +61,7 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
   const [scanTarget, setScanTarget] = useState('10.0.4.0/24');
   const [scanProfile, setScanProfile] = useState('quick');
   const [jobs, setJobs] = useState([]);
+  const [scanWorker, setScanWorker] = useState(null);
   const [discovery, setDiscovery] = useState([]);
   const [mercusys, setMercusys] = useState(null);
   const [hosts, setHosts] = useState([]);
@@ -124,7 +125,10 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
     const r = await fetch('/api/assets/scans');
     const data = await r.json();
     setJobs(data.jobs || []);
-  }, []);
+    if (data.worker) setScanWorker(data.worker);
+    const active = (data.jobs || []).some((j) => j.status === 'running' || j.status === 'queued');
+    if (active) loadSummary();
+  }, [loadSummary]);
 
   const loadHosts = useCallback(async () => {
     const params = new URLSearchParams();
@@ -444,7 +448,7 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
 
   const navBadges = {
     discovery: summary?.pendingDiscovery ?? discovery.length,
-    scan: jobs.filter((j) => j.status === 'queued' || j.status === 'running').length,
+    scan: jobs.filter((j) => ['queued', 'running'].includes(j.status)).length,
   };
 
   return (
@@ -971,30 +975,55 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
       ) : null}
 
       {tab === 'scan' ? (
-        <form className="assets-scan-form" onSubmit={startScan}>
-          <label>
-            Target (subnet CIDR o IP privato)
-            <input value={scanTarget} onChange={(e) => setScanTarget(e.target.value)} />
-          </label>
-          <label>
-            Profilo
-            <select value={scanProfile} onChange={(e) => setScanProfile(e.target.value)}>
-              <option value="quick">Rapido (top 200)</option>
-              <option value="full">Completo (-sV)</option>
-            </select>
-          </label>
-          <button type="submit" className="btn-primary" disabled={busy}>
-            Avvia scan
-          </button>
-          <ul className="assets-jobs">
-            {jobs.map((j) => (
-              <li key={j.id}>
-                #{j.id} {j.status} {j.progress || ''} — {j.target}
-                {j.error ? ` — ${j.error}` : ''}
-              </li>
-            ))}
-          </ul>
-        </form>
+        <div className="assets-scan-panel">
+          {scanWorker && (!scanWorker.nmapAvailable || !scanWorker.active) ? (
+            <p className="assets-msg assets-warn" role="alert">
+              {!scanWorker.nmapAvailable
+                ? 'nmap non disponibile nel container: le scansioni non possono partire (ricostruire l’immagine Docker con nmap).'
+                : 'Worker scansioni non inizializzato: riavvia il servizio homelab-hub.'}
+            </p>
+          ) : null}
+          <form className="assets-scan-form" onSubmit={startScan}>
+            <label>
+              Target (subnet CIDR o IP privato)
+              <input value={scanTarget} onChange={(e) => setScanTarget(e.target.value)} />
+            </label>
+            <label>
+              Profilo
+              <select value={scanProfile} onChange={(e) => setScanProfile(e.target.value)}>
+                <option value="quick">Rapido (top 200)</option>
+                <option value="full">Completo (-sV)</option>
+              </select>
+            </label>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              Avvia scan
+            </button>
+          </form>
+          <ScanJobsList
+            jobs={jobs}
+            busy={busy}
+            onCancel={async (id) => {
+              setBusy(true);
+              await fetch(`/api/assets/scans/${id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'cancel' }),
+              });
+              await loadJobs();
+              setBusy(false);
+            }}
+            onRetry={async (id) => {
+              setBusy(true);
+              await fetch(`/api/assets/scans/${id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'retry' }),
+              });
+              await loadJobs();
+              setBusy(false);
+            }}
+          />
+        </div>
       ) : null}
 
       <nav className="admin-nav-links assets-legacy">
@@ -1003,6 +1032,81 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
         </div>
       </div>
     </div>
+  );
+}
+
+const SCAN_STATUS_LABEL = {
+  queued: 'In coda',
+  running: 'In corso',
+  done: 'Completata',
+  failed: 'Fallita',
+  stale: 'Bloccata',
+  cancelled: 'Annullata',
+};
+
+function formatScanDuration(job) {
+  const start = job.started_at ? Date.parse(job.started_at.replace(' ', 'T') + 'Z') : NaN;
+  if (!Number.isFinite(start)) return null;
+  const end = job.finished_at
+    ? Date.parse(job.finished_at.replace(' ', 'T') + 'Z')
+    : Date.now();
+  const sec = Math.max(0, Math.round((end - start) / 1000));
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  return `${m}m ${sec % 60}s`;
+}
+
+function ScanJobsList({ jobs, onCancel, onRetry, busy }) {
+  if (!jobs.length) {
+    return <p className="assets-muted-sm">Nessuna scansione recente.</p>;
+  }
+  return (
+    <ul className="assets-jobs-list">
+      {jobs.map((j) => {
+        const label = SCAN_STATUS_LABEL[j.status] || j.status;
+        const duration = formatScanDuration(j);
+        const canCancel = j.status === 'queued' || j.status === 'running';
+        const canRetry = ['failed', 'stale', 'cancelled', 'done'].includes(j.status);
+        return (
+          <li
+            key={j.id}
+            className={`assets-job-card assets-job-${j.status}`}
+            data-testid={`scan-job-${j.id}`}
+          >
+            <div className="assets-job-head">
+              <span className="assets-job-status">{label}</span>
+              <span className="assets-muted-sm">#{j.id}</span>
+            </div>
+            <div className="assets-job-target">{j.target}</div>
+            <div className="assets-job-meta">
+              <span>Profilo: {j.profile === 'full' ? 'completo' : 'rapido'}</span>
+              {duration ? <span>Durata: {duration}</span> : null}
+              {j.status === 'running' && j.started_at ? (
+                <span>Avviata: {j.started_at.replace('T', ' ').slice(0, 19)}</span>
+              ) : null}
+            </div>
+            {j.progress ? <div className="assets-job-progress">{j.progress}</div> : null}
+            {j.error ? (
+              <div className="assets-job-error" role="alert">
+                {j.error}
+              </div>
+            ) : null}
+            <div className="assets-job-actions">
+              {canCancel ? (
+                <button type="button" className="btn-secondary" disabled={busy} onClick={() => onCancel(j.id)}>
+                  Annulla
+                </button>
+              ) : null}
+              {canRetry ? (
+                <button type="button" className="btn-secondary" disabled={busy} onClick={() => onRetry(j.id)}>
+                  Ripeti
+                </button>
+              ) : null}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

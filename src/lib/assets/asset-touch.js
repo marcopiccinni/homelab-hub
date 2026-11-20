@@ -1,4 +1,5 @@
 import { resolveSubnetIdForIp } from './repository.js';
+import { findActiveAssetIdByIp, mergeAssetInto } from './asset-merge.js';
 
 export function touchAssetPresence(db, assetId, source = 'scan') {
   db.prepare(
@@ -23,6 +24,10 @@ export function upsertObservedIpForAsset(db, assetId, ip) {
   ).run(ip, subnetId);
   const ipRow = db.prepare('SELECT id FROM ip_addresses WHERE address=?').get(ip);
   if (!ipRow) return;
+  const holder = findActiveAssetIdByIp(db, ip);
+  if (holder && holder !== assetId) {
+    mergeAssetInto(db, assetId, holder, { reason: 'observed_ip', matchKey: `ip:${ip}` });
+  }
   db.prepare(`INSERT OR IGNORE INTO asset_ip_assignments (asset_id, ip_id) VALUES (?, ?)`).run(
     assetId,
     ipRow.id

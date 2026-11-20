@@ -1,10 +1,10 @@
-import { enqueueScan, listScanJobs } from '../../../../lib/assets/nmap-runner';
+import { enqueueScan, listScanJobs, getScanWorkerStatus } from '../../../../lib/assets/nmap-runner';
 import { assertScanTargetAllowed } from '../../../../lib/assets/private-ip';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  return Response.json({ jobs: listScanJobs() });
+  return Response.json({ jobs: listScanJobs(), worker: getScanWorkerStatus() });
 }
 
 export async function POST(request) {
