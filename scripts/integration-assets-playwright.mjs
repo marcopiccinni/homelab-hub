@@ -173,7 +173,8 @@ async function main() {
   const mpage = await mob.newPage();
   await mpage.goto(`${BASE}/admin/assets`, { waitUntil: 'networkidle' });
   await mpage.screenshot({ path: path.join(ARTIFACTS, 'assets-mobile.png'), fullPage: true });
-  await mpage.locator('button.assets-tab', { hasText: 'Host' }).click();
+  await mpage.getByRole('button', { name: 'Menu sezioni' }).click();
+  await mpage.locator('.assets-nav-drawer button.assets-tab', { hasText: 'Host' }).click();
   await mpage.waitForSelector('[data-testid="hosts-tab"]', { timeout: 15000 });
   await mpage.screenshot({ path: path.join(ARTIFACTS, 'assets-hosts-mobile.png'), fullPage: true });
 

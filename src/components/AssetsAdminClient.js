@@ -4,6 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import AssetDetailPanel from './AssetDetailPanel';
+import {
+  AssetsNavSidebar,
+  AssetsNavMobileBar,
+  AssetsNavDrawer,
+  findNavLabel,
+} from './AssetsNav.js';
 
 const VALID_TABS = new Set([
   'summary',
@@ -16,28 +22,6 @@ const VALID_TABS = new Set([
   'mercusys',
   'import',
 ]);
-
-const NAV_GROUPS = [
-  { label: 'Panoramica', tabs: [['summary', 'Riepilogo']] },
-  {
-    label: 'Inventario',
-    tabs: [
-      ['assets', 'Asset'],
-      ['hosts', 'Host'],
-      ['subnet', 'Subnet'],
-      ['fqdn', 'FQDN'],
-    ],
-  },
-  {
-    label: 'Scoperta',
-    tabs: [
-      ['discovery', 'Coda'],
-      ['scan', 'Scansioni'],
-      ['mercusys', 'Router Mercusys'],
-    ],
-  },
-  { label: 'Dati', tabs: [['import', 'Import / Export']] },
-];
 
 export default function AssetsAdminClient({ initialSubnets = [], initialSummary = null }) {
   const searchParams = useSearchParams();
@@ -87,6 +71,7 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
   const [msg, setMsg] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [newAsset, setNewAsset] = useState({ name: '', category: '', location: '' });
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const loadSummary = useCallback(async () => {
     const r = await fetch('/api/assets/summary');
@@ -187,9 +172,10 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
     loadSummary();
     loadJobs();
     loadMercusys();
+    loadDiscovery();
     const t = setInterval(loadJobs, 4000);
     return () => clearInterval(t);
-  }, [loadSummary, loadJobs, loadMercusys]);
+  }, [loadSummary, loadJobs, loadMercusys, loadDiscovery]);
 
   useEffect(() => {
     if (tab === 'subnet' && gridSubnetId) loadGrid(gridSubnetId);
@@ -456,29 +442,34 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
     setBusy(false);
   }
 
+  const navBadges = {
+    discovery: summary?.pendingDiscovery ?? discovery.length,
+    scan: jobs.filter((j) => j.status === 'queued' || j.status === 'running').length,
+  };
+
   return (
     <div className="admin-assets assets-admin" data-assets-tab={tab}>
-      <nav className="assets-nav" aria-label="Sezioni asset di rete">
-        {NAV_GROUPS.map((group) => (
-          <div key={group.label} className="assets-nav-group">
-            <span className="assets-nav-group-label">{group.label}</span>
-            <div className="assets-tabs" role="tablist">
-              {group.tabs.map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === id}
-                  className={tab === id ? 'assets-tab assets-tab-active' : 'assets-tab'}
-                  onClick={() => navigateTab(id)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </nav>
+      <div className="assets-shell">
+        <AssetsNavSidebar
+          tab={tab}
+          badges={navBadges}
+          onSelect={navigateTab}
+          className="assets-sidebar-desktop"
+        />
+        <AssetsNavMobileBar
+          tab={tab}
+          badges={navBadges}
+          currentLabel={findNavLabel(tab)}
+          onOpenMenu={() => setMobileNavOpen(true)}
+        />
+        <AssetsNavDrawer
+          open={mobileNavOpen}
+          tab={tab}
+          badges={navBadges}
+          onSelect={navigateTab}
+          onClose={() => setMobileNavOpen(false)}
+        />
+        <div className="assets-main">
 
       {toast ? (
         <p className="assets-msg assets-toast" role="status">
@@ -1009,6 +1000,8 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
       <nav className="admin-nav-links assets-legacy">
         <Link href="/admin/network">Vista legacy host da link</Link>
       </nav>
+        </div>
+      </div>
     </div>
   );
 }
