@@ -12,6 +12,7 @@ const TABS = [
   ['fqdn', 'FQDN'],
   ['import', 'Import'],
   ['scan', 'Scan'],
+  ['hosts', 'Host'],
 ];
 
 export default function AssetsAdminClient({ initialSubnets = [], initialSummary = null }) {
@@ -46,6 +47,10 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
   const [jobs, setJobs] = useState([]);
   const [discovery, setDiscovery] = useState([]);
   const [mercusys, setMercusys] = useState(null);
+  const [hosts, setHosts] = useState([]);
+  const [hostSubnetFilter, setHostSubnetFilter] = useState('');
+  const [hostQ, setHostQ] = useState('');
+  const [hostSuggestions, setHostSuggestions] = useState([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -88,6 +93,25 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
     setJobs(data.jobs || []);
   }, []);
 
+  const loadHosts = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (hostSubnetFilter) params.set('subnetId', hostSubnetFilter);
+    if (hostQ) params.set('q', hostQ);
+    const r = await fetch(`/api/assets/hosts?${params}`);
+    if (r.ok) {
+      const data = await r.json();
+      setHosts(data.hosts || []);
+    }
+  }, [hostSubnetFilter, hostQ]);
+
+  const loadHostSuggestions = useCallback(async () => {
+    const r = await fetch('/api/assets/hosts/suggestions');
+    if (r.ok) {
+      const data = await r.json();
+      setHostSuggestions(data.suggestions || []);
+    }
+  }, []);
+
   const loadDiscovery = useCallback(async () => {
     const r = await fetch('/api/assets/discovery');
     const data = await r.json();
@@ -124,7 +148,11 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
     if (tab === 'assets') loadAssets();
     if (tab === 'fqdn') loadFqdns();
     if (tab === 'discovery') loadDiscovery();
-  }, [tab, subnetId, loadGrid, loadAssets, loadFqdns, loadDiscovery]);
+    if (tab === 'hosts') {
+      loadHosts();
+      loadHostSuggestions();
+    }
+  }, [tab, subnetId, loadGrid, loadAssets, loadFqdns, loadDiscovery, loadHosts, loadHostSuggestions]);
 
   async function openDetail(id) {
     setDetailId(id);
@@ -437,6 +465,7 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
                   <th>Categoria</th>
                   <th>Posizione</th>
                   <th>Online</th>
+                  <th>Host</th>
                 </tr>
               </thead>
               <tbody>
@@ -455,6 +484,15 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
                       <span className={a.is_online ? 'assets-badge assets-badge-ok' : 'assets-badge assets-badge-muted'}>
                         {a.is_online ? 'Online' : 'Offline'}
                       </span>
+                    </td>
+                    <td>
+                      <Link
+                        href={`/admin/assets/host/${a.id}`}
+                        className="assets-link-btn assets-btn-sm"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Host
+                      </Link>
                     </td>
                   </tr>
                 ))}
@@ -623,6 +661,97 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
               Importa client dal router
             </button>
           </div>
+        </div>
+      ) : null}
+
+      {tab === 'hosts' ? (
+        <div className="assets-host-list" data-testid="hosts-tab">
+          <p className="assets-muted">
+            Porte unificate per asset (nmap, import Services, link dashboard). Apri il dettaglio per documentare o
+            avviare scan host.
+          </p>
+          <div className="assets-host-list-filters">
+            <select
+              value={hostSubnetFilter}
+              onChange={(e) => setHostSubnetFilter(e.target.value)}
+              aria-label="Filtra subnet"
+            >
+              <option value="">Tutte le subnet</option>
+              {subnets
+                .filter((s) => s.cidr && !s.is_non_ip)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.family_label} ({s.cidr})
+                  </option>
+                ))}
+            </select>
+            <input
+              placeholder="Cerca nome, codice, IP…"
+              value={hostQ}
+              onChange={(e) => setHostQ(e.target.value)}
+            />
+            <button type="button" className="btn-primary assets-btn-sm" onClick={loadHosts}>
+              Applica
+            </button>
+          </div>
+          <div className="assets-table-scroll">
+            <table className="assets-table">
+              <thead>
+                <tr>
+                  <th>Asset</th>
+                  <th>IP</th>
+                  <th>Aperte</th>
+                  <th>Non doc.</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {hosts.map((h) => (
+                  <tr key={h.id}>
+                    <td>
+                      {h.asset_code != null ? `${h.asset_code} — ` : ''}
+                      {h.name}
+                    </td>
+                    <td className="assets-host-endpoints">{h.ip_list || '—'}</td>
+                    <td>{h.open_ports}</td>
+                    <td>
+                      {h.undocumented_ports > 0 ? (
+                        <span className="assets-badge assets-badge-warn">{h.undocumented_ports}</span>
+                      ) : (
+                        h.undocumented_ports
+                      )}
+                    </td>
+                    <td>
+                      <Link href={`/admin/assets/host/${h.id}`} className="assets-link-btn">
+                        Dettaglio host
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {hostSuggestions.length ? (
+            <section className="assets-section">
+              <h4>Associazioni suggerite</h4>
+              <ul className="assets-suggestions-list">
+                {hostSuggestions.slice(0, 8).map((s, i) => (
+                  <li key={`${s.kind}-${s.link_id || s.fqdn_id}-${i}`}>
+                    {s.title || s.host}: {s.reason}
+                    {s.suggested_asset_id ? (
+                      <>
+                        {' '}
+                        →{' '}
+                        <Link href={`/admin/assets/host/${s.suggested_asset_id}`}>
+                          {s.suggested_asset_name}
+                        </Link>
+                      </>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
         </div>
       ) : null}
 

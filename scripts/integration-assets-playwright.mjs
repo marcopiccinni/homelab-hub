@@ -117,6 +117,14 @@ async function main() {
   );
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-list-after-import-desktop.png'), fullPage: true });
 
+  await page.locator('button.assets-tab', { hasText: 'Host' }).click();
+  await page.waitForSelector('[data-testid="hosts-tab"]', { timeout: 15000 });
+  await page.screenshot({ path: path.join(ARTIFACTS, 'assets-hosts-list-desktop.png'), fullPage: true });
+  await page.locator('a', { hasText: 'Dettaglio host' }).first().click();
+  await page.waitForSelector('[data-testid="host-view-detail"]', { timeout: 15000 });
+  await page.screenshot({ path: path.join(ARTIFACTS, 'assets-host-detail-desktop.png'), fullPage: true });
+  await page.goto(`${BASE}/admin/assets`, { waitUntil: 'domcontentloaded' });
+
   await page.locator('button.assets-tab', { hasText: 'Import' }).click();
   await page.waitForSelector('.assets-mercusys-box');
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-mercusys-settings-desktop.png'), fullPage: true });
@@ -128,6 +136,9 @@ async function main() {
   const mpage = await mob.newPage();
   await mpage.goto(`${BASE}/admin/assets`, { waitUntil: 'networkidle' });
   await mpage.screenshot({ path: path.join(ARTIFACTS, 'assets-mobile.png'), fullPage: true });
+  await mpage.locator('button.assets-tab', { hasText: 'Host' }).click();
+  await mpage.waitForSelector('[data-testid="hosts-tab"]', { timeout: 15000 });
+  await mpage.screenshot({ path: path.join(ARTIFACTS, 'assets-hosts-mobile.png'), fullPage: true });
 
   await browser.close();
   child.kill('SIGTERM');

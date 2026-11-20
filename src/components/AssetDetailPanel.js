@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 
 const PORT_BADGE = {
   ok: 'assets-badge-ok',
@@ -105,6 +106,9 @@ export default function AssetDetailPanel({ detail, onClose, onRefresh, setMsg, s
           </p>
         </div>
         <div className="assets-detail-actions">
+          <Link href={`/admin/assets/host/${asset.id}`} className="btn-secondary assets-btn-sm">
+            Vista host
+          </Link>
           <button type="button" className="btn-secondary assets-btn-sm" onClick={scanHost}>
             Scan host
           </button>
