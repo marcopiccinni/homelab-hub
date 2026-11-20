@@ -99,6 +99,9 @@ async function main() {
   await fileChooser.setFiles(FIXTURE);
   await page.locator('[data-testid="import-preview"]').waitFor({ timeout: 15000 });
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-import-preview-desktop.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Conferma import' }).click();
+  await page.waitForSelector('[data-testid="import-result"]', { timeout: 20000 });
+  await page.screenshot({ path: path.join(ARTIFACTS, 'assets-import-success-desktop.png'), fullPage: true });
 
   const mob = await browser.newContext({
     ...devices['iPhone 12'],

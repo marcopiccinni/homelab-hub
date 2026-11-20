@@ -53,8 +53,8 @@ const live = new Database(dbPath);
 runMigrations(live, dbPath);
 
 const version = live.pragma('user_version', { simple: true });
-if (version !== 5) {
-  console.error('Expected user_version 5, got', version);
+if (version !== 6) {
+  console.error('Expected user_version 6, got', version);
   process.exit(1);
 }
 

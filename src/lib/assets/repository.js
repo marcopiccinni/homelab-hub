@@ -296,13 +296,22 @@ export function listFqdns() {
 
 export function upsertAssetFromImport(row, subnetByCidr) {
   const db = getDb();
+  let created = false;
   const tx = db.transaction(() => {
     let assetId = null;
-    if (row.asset_code) {
+    if (row.asset_code !== null && row.asset_code !== undefined) {
       const existing = db
         .prepare('SELECT id FROM assets WHERE asset_code = ?')
         .get(row.asset_code);
       if (existing) assetId = existing.id;
+    }
+    if (!assetId && row.mac) {
+      const hit = db
+        .prepare(
+          `SELECT ai.asset_id FROM asset_interfaces ai WHERE ai.mac_address = ? LIMIT 1`
+        )
+        .get(row.mac);
+      if (hit) assetId = hit.asset_id;
     }
     if (!assetId) {
       const r = db
@@ -311,7 +320,7 @@ export function upsertAssetFromImport(row, subnetByCidr) {
            VALUES (?, ?, ?, ?, ?, ?, 'active')`
         )
         .run(
-          row.asset_code || null,
+          row.asset_code ?? null,
           row.name,
           row.location || null,
           row.notes || null,
@@ -319,6 +328,7 @@ export function upsertAssetFromImport(row, subnetByCidr) {
           row.subnet_id || null
         );
       assetId = r.lastInsertRowid;
+      created = true;
     } else {
       db.prepare(
         `UPDATE assets SET name=?, location=?, notes=?, category=?, primary_subnet_id=?, updated_at=datetime('now') WHERE id=?`
@@ -372,7 +382,7 @@ export function upsertAssetFromImport(row, subnetByCidr) {
         db.prepare(`INSERT OR IGNORE INTO fqdn_ips (fqdn_id, ip_id) VALUES (?, ?)`).run(fqdnId, ipId);
       }
     }
-    return assetId;
+    return { assetId, created };
   });
   return tx();
 }

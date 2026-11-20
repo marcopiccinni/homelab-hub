@@ -11,7 +11,7 @@ const db = new Database(dbPath);
 runMigrations(db, dbPath);
 
 const version = db.pragma('user_version', { simple: true });
-assert.equal(version, 5);
+assert.ok(version >= 5 && version <= 6, `user_version ${version}`);
 
 const subnets = db.prepare('SELECT COUNT(*) AS c FROM subnets').get().c;
 assert.ok(subnets >= 10);

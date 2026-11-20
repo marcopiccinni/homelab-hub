@@ -56,7 +56,7 @@ const live = new Database(dbPath);
 runMigrations(live, dbPath);
 
 const ver = live.pragma('user_version', { simple: true });
-assert.ok(ver >= 4 && ver <= 5, `user_version atteso 4 o 5, got ${ver}`);
+assert.ok(ver >= 4 && ver <= 6, `user_version atteso 4–6, got ${ver}`);
 
 const ha = live.prepare('SELECT access_type FROM links WHERE title = ?').get('Home Assistant');
 assert.equal(ha.access_type, 'local_exposed');

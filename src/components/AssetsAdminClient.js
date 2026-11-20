@@ -38,6 +38,9 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
   const [detail, setDetail] = useState(null);
   const [detailId, setDetailId] = useState(null);
   const [importPreview, setImportPreview] = useState(null);
+  const [pendingImportFile, setPendingImportFile] = useState(null);
+  const [importResult, setImportResult] = useState(null);
+  const [mercusysUrl, setMercusysUrl] = useState('');
   const [scanTarget, setScanTarget] = useState('10.0.4.0/24');
   const [scanProfile, setScanProfile] = useState('quick');
   const [jobs, setJobs] = useState([]);
@@ -92,8 +95,13 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
   }, []);
 
   const loadMercusys = useCallback(async () => {
-    const r = await fetch('/api/assets/mercusys');
-    setMercusys(await r.json());
+    const [st, cfg] = await Promise.all([
+      fetch('/api/assets/mercusys'),
+      fetch('/api/assets/settings'),
+    ]);
+    setMercusys(await st.json());
+    const settings = await cfg.json();
+    if (settings.mercusys_url) setMercusysUrl(settings.mercusys_url);
   }, []);
 
   const refreshDetail = useCallback(async (id) => {
@@ -152,21 +160,66 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
     setMsg(`Target impostato su ${subnet.cidr}`);
   }
 
-  async function onImportFile(file, previewOnly) {
+  async function onImportPreview(file) {
     const fd = new FormData();
     fd.append('file', file);
     setBusy(true);
-    const url = previewOnly ? '/api/assets/import/preview' : '/api/assets/import';
-    const r = await fetch(url, { method: 'POST', body: fd });
+    setImportResult(null);
+    setMsg('');
+    const r = await fetch('/api/assets/import/preview', { method: 'POST', body: fd });
     const data = await r.json();
-    if (previewOnly) setImportPreview(data);
-    else {
+    if (!r.ok) {
+      setMsg(data.error || 'Anteprima fallita');
+      setImportPreview(null);
+      setPendingImportFile(null);
+    } else {
+      setImportPreview(data);
+      setPendingImportFile(file);
+      if (data.errors?.length) setMsg(data.errors.join(' · '));
+    }
+    setBusy(false);
+  }
+
+  async function commitImport() {
+    if (!pendingImportFile) {
+      setMsg('Seleziona un file e attendi l’anteprima prima di importare.');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('file', pendingImportFile);
+    setBusy(true);
+    setMsg('');
+    const r = await fetch('/api/assets/import', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) {
+      setMsg(data.error || 'Import fallito');
+      setImportResult(null);
+    } else {
+      const s = data.stats || {};
+      setImportResult(s);
       setMsg(
-        `Import: ${data.stats?.assets || 0} asset, ${data.stats?.services || 0} servizi, saltati ${data.stats?.skipped || 0}`
+        `Import completato — nuovi asset: ${s.assets_new ?? 0}, aggiornati: ${s.assets_updated ?? 0}, servizi: ${s.services ?? 0}, righe griglia ignorate: ${s.grid_rows ?? 0}, saltati: ${s.skipped ?? 0}`
       );
+      setImportPreview(null);
+      setPendingImportFile(null);
       await loadAssets();
       await loadSummary();
+      await loadGrid(subnetId);
     }
+    setBusy(false);
+  }
+
+  async function saveMercusysUrl(e) {
+    e.preventDefault();
+    setBusy(true);
+    const r = await fetch('/api/assets/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mercusys_url: mercusysUrl }),
+    });
+    const data = await r.json();
+    setMsg(data.error || 'URL Mercusys salvato');
+    await loadMercusys();
     setBusy(false);
   }
 
@@ -206,7 +259,18 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
     setBusy(true);
     const r = await fetch('/api/assets/mercusys/import', { method: 'POST' });
     const data = await r.json();
-    setMsg(data.error || `Importati ${data.imported || 0} client in coda`);
+    if (!r.ok || !data.ok) {
+      const detail = [data.step, data.httpStatus ? `HTTP ${data.httpStatus}` : null, data.error]
+        .filter(Boolean)
+        .join(' — ');
+      setMsg(detail || 'Import Mercusys fallito');
+    } else if (data.mock) {
+      setMsg(
+        'Mock disabilitato in produzione: imposta MERCUSYS_MOCK=1 solo per test. Nessun client importato.'
+      );
+    } else {
+      setMsg(`Importati ${data.imported || 0} client dal router in coda`);
+    }
     await loadDiscovery();
     setBusy(false);
   }
@@ -493,42 +557,69 @@ export default function AssetsAdminClient({ initialSubnets = [], initialSummary 
 
       {tab === 'import' ? (
         <div className="assets-import">
-          <p>Carica Excel (General / All / Services). Solo dati sintetici nel repo pubblico.</p>
+          <p>Carica Excel (General / All / Services). Anteprima obbligatoria, poi conferma import.</p>
           <label className="assets-file-label">
-            Anteprima
+            File inventario
             <input
               type="file"
               accept=".xlsx,.xls"
               disabled={busy}
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) onImportFile(f, true);
+                if (f) onImportPreview(f);
               }}
             />
           </label>
           {importPreview ? (
             <ImportPreviewCard preview={importPreview} />
           ) : null}
-          <label className="assets-file-label">
-            Import definitivo
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              disabled={busy}
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) onImportFile(f, false);
-              }}
-            />
-          </label>
+          <div className="assets-import-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={busy || !pendingImportFile}
+              onClick={commitImport}
+            >
+              Conferma import
+            </button>
+            {importResult ? (
+              <button type="button" className="assets-link-btn" onClick={() => setTab('assets')}>
+                Vai alla lista asset
+              </button>
+            ) : null}
+          </div>
+          {importResult ? (
+            <ImportResultCard stats={importResult} />
+          ) : null}
           <div className="assets-mercusys-box">
+            <h4>Router Mercusys</h4>
             <p className="assets-muted">
-              Mercusys:{' '}
-              {mercusys?.configured
-                ? mercusys.error || mercusys.message || 'Configurato'
-                : 'non configurato (MERCUSYS_URL / MERCUSYS_PASSWORD o MERCUSYS_MOCK=1)'}
+              Password container:{' '}
+              <strong>{mercusys?.passwordConfigured ? 'configurata' : 'non configurata'}</strong>
+              {mercusys?.mockMode ? ' · MOCK attivo (solo test)' : ''}
             </p>
-            <button type="button" className="btn-primary" disabled={busy} onClick={importMercusys}>
+            <form className="assets-inline-form" onSubmit={saveMercusysUrl}>
+              <input
+                type="url"
+                placeholder="http://192.168.1.1"
+                value={mercusysUrl}
+                onChange={(e) => setMercusysUrl(e.target.value)}
+              />
+              <button type="submit" className="btn-secondary assets-btn-sm">
+                Salva URL
+              </button>
+            </form>
+            {mercusys?.lastError ? (
+              <p className="assets-msg" role="alert">
+                Ultimo errore: {mercusys.lastError}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={busy || !mercusys?.passwordConfigured || !mercusys?.routerUrl}
+              onClick={importMercusys}
+            >
               Importa client dal router
             </button>
           </div>
@@ -651,17 +742,40 @@ function StatCard({ value, label }) {
   );
 }
 
+function ImportResultCard({ stats }) {
+  return (
+    <div className="assets-preview-card assets-import-result" data-testid="import-result">
+      <h4>Riepilogo import</h4>
+      <ul className="assets-simple-list">
+        <li>Asset nuovi: {stats.assets_new ?? 0}</li>
+        <li>Asset aggiornati: {stats.assets_updated ?? 0}</li>
+        <li>Servizi: {stats.services ?? 0}</li>
+        <li>Subnet nuove: {stats.subnets_new ?? 0}</li>
+        <li>Subnet aggiornate: {stats.subnets_updated ?? 0}</li>
+        <li>Righe griglia IP ignorate: {stats.grid_rows ?? 0}</li>
+        <li>Righe saltate: {stats.skipped ?? 0}</li>
+      </ul>
+    </div>
+  );
+}
+
 function ImportPreviewCard({ preview }) {
   return (
     <div className="assets-preview-card" data-testid="import-preview">
       <p>
-        Fogli: {preview.sheets?.join(', ')} · Asset: <strong>{preview.assets}</strong> · Servizi:{' '}
+        Fogli: {preview.sheets?.join(', ')} · Asset in anteprima: <strong>{preview.assets}</strong> (nuovi{' '}
+        {preview.assets_new ?? 0}, aggiornati {preview.assets_updated ?? 0}) · Servizi:{' '}
         <strong>{preview.services}</strong>
       </p>
       <p>
-        Subnet nuove: {preview.subnets_new ?? 0} · aggiornate: {preview.subnets_updated ?? 0} · saltati:{' '}
-        {preview.skipped ?? 0}
+        Subnet nuove: {preview.subnets_new ?? 0} · aggiornate: {preview.subnets_updated ?? 0} · righe griglia:{' '}
+        {preview.grid_rows ?? 0} · saltati: {preview.skipped ?? 0}
       </p>
+      {preview.errors?.length ? (
+        <p className="assets-msg" role="alert">
+          {preview.errors.join(' · ')}
+        </p>
+      ) : null}
       {preview.rows?.length ? (
         <table className="assets-table assets-table-compact">
           <thead>

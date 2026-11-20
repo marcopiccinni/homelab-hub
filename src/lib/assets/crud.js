@@ -188,18 +188,20 @@ export function documentObservedPort(observedId, extra = {}) {
 
 export function upsertSubnet(payload) {
   const db = getDb();
+  const isNonIp = payload.is_non_ip ? 1 : 0;
   if (payload.id) {
     db.prepare(
-      `UPDATE subnets SET sort_order=?, family_label=?, cidr=?, description=?, notes=?, dhcp_range=?, content_examples=?, vlan=? WHERE id=?`
+      `UPDATE subnets SET sort_order=?, family_label=?, cidr=?, description=?, notes=?, dhcp_range=?, content_examples=?, vlan=?, is_non_ip=? WHERE id=?`
     ).run(
       payload.sort_order ?? 0,
       payload.family_label,
-      payload.cidr,
+      payload.cidr ?? null,
       payload.description || null,
       payload.notes || null,
       payload.dhcp_range || null,
       payload.content_examples || null,
       payload.vlan || null,
+      isNonIp,
       payload.id
     );
     return payload.id;
@@ -207,17 +209,18 @@ export function upsertSubnet(payload) {
   const r = db
     .prepare(
       `INSERT INTO subnets (sort_order, family_label, cidr, description, notes, dhcp_range, content_examples, vlan, is_non_ip)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       payload.sort_order ?? 0,
       payload.family_label,
-      payload.cidr,
+      payload.cidr ?? null,
       payload.description || null,
       payload.notes || null,
       payload.dhcp_range || null,
       payload.content_examples || null,
-      payload.vlan || null
+      payload.vlan || null,
+      isNonIp
     );
   return r.lastInsertRowid;
 }
