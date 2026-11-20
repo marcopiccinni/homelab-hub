@@ -1,8 +1,8 @@
 /**
- * Client Mercusys / TP-Link (web UI moderna). Password solo da env; URL da DB o env.
+ * Client Mercusys / TP-Link (LuCI Deco-Halo + legacy AES-nn).
+ * Password solo da env; URL da DB o env.
  */
 
-import crypto from 'node:crypto';
 import { getDb } from '../db.js';
 import { normalizeMac } from './mac.js';
 import {
@@ -10,11 +10,20 @@ import {
   getMercusysLastError,
   setMercusysLastError,
 } from './settings.js';
+import { encryptMercusysPasswordLegacy } from './mercusys-crypto.js';
+import {
+  probeDecoFirmware,
+  loginDecoLuci,
+  fetchDecoClientList,
+} from './mercusys-deco.js';
+import { mercusysLog } from './mercusys-log.js';
 
 const MOCK_CLIENTS = [
   { hostname: 'synth-phone', ip: '10.0.4.88', mac: '02:00:00:00:00:01' },
   { hostname: 'synth-iot', ip: '10.0.4.89', mac: '02:00:00:00:00:02' },
 ];
+
+export { encryptMercusysPasswordLegacy as encryptMercusysPassword };
 
 export function mercusysPasswordConfigured() {
   return Boolean(process.env.MERCUSYS_PASSWORD?.trim());
@@ -39,48 +48,93 @@ export function mercusysStatus() {
   };
 }
 
-/** AES-128-ECB come varianti TP-Link/Mercusys firmware recente (best-effort). */
-export function encryptMercusysPassword(password, nn) {
-  const key = nn.padEnd(16, '\0').slice(0, 16);
-  const cipher = crypto.createCipheriv('aes-128-ecb', Buffer.from(key, 'utf8'), null);
-  cipher.setAutoPadding(true);
-  return Buffer.concat([cipher.update(password, 'utf8'), cipher.final()]).toString('base64');
+function mapClients(rows) {
+  return rows.map((r) => ({
+    hostname: decodeClientName(r.hostname || r.name || ''),
+    ip: r.ip || r.ipaddr || r.ip_address || '',
+    mac: normalizeMac(r.mac || r.hwaddr || r.macaddr || '') || null,
+  }));
 }
 
-async function fetchLoginPage(baseUrl) {
-  const res = await fetch(`${baseUrl}/`, {
-    method: 'GET',
-    headers: { Accept: 'text/html,application/xhtml+xml' },
-    signal: AbortSignal.timeout(10000),
-  });
-  const html = await res.text();
-  const nn = html.match(/var\s+nn\s*=\s*'([^']+)'/)?.[1] || html.match(/"nn"\s*:\s*"([^"]+)"/)?.[1];
-  const ee = html.match(/var\s+ee\s*=\s*'([^']+)'/)?.[1];
-  return { ok: res.ok, html, nn, ee, status: res.status };
-}
-
-async function postLogin(baseUrl, password) {
-  const loginPage = await fetchLoginPage(baseUrl);
-  if (!loginPage.ok) {
-    return {
-      ok: false,
-      step: 'login_page',
-      httpStatus: loginPage.status,
-      error: `Pagina login HTTP ${loginPage.status}`,
-      clients: [],
-    };
+function decodeClientName(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  try {
+    const d = Buffer.from(raw, 'base64');
+    if (d.length && /^[\x20-\x7e\u00a0-\ufffd]+$/.test(d.toString('utf8'))) {
+      return d.toString('utf8');
+    }
+  } catch {
+    /* ignore */
   }
+  return raw;
+}
+
+async function followMetaRefresh(baseUrl) {
+  mercusysLog('info', `GET ${baseUrl}/`);
+  let res;
+  try {
+    res = await fetch(`${baseUrl}/`, {
+      method: 'GET',
+      headers: { Accept: 'text/html,application/xhtml+xml' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, step: 'router_unreachable', error: `Router irraggiungibile: ${msg}` };
+  }
+  const html = await res.text();
+  const refresh = html.match(/http-equiv=["']refresh["'][^>]*content=["'][^"']*URL=([^"']+)/i);
+  if (refresh) {
+    const nextPath = refresh[1].trim();
+    const nextUrl = new URL(nextPath, `${baseUrl}/`).href;
+    mercusysLog('info', 'redirect meta refresh', nextUrl);
+    try {
+      await fetch(nextUrl, { redirect: 'follow', signal: AbortSignal.timeout(10000) });
+    } catch (err) {
+      mercusysLog('warn', 'pagina login non raggiunta dopo refresh', err instanceof Error ? err.message : '');
+    }
+  }
+  return { ok: true, status: res.status, hint: refresh ? 'halo_web' : 'legacy_html' };
+}
+
+async function fetchLoginPageLegacy(baseUrl) {
+  const entry = await followMetaRefresh(baseUrl);
+  if (!entry.ok) return entry;
+  const res = await fetch(`${baseUrl}/webpages/index.html`, {
+    headers: { Accept: 'text/html' },
+    redirect: 'follow',
+    signal: AbortSignal.timeout(10000),
+  }).catch(() => null);
+  const html = (res ? await res.text() : '') || '';
+  const probeHtml = html.length > 100 ? html : '';
+  const fallback = await fetch(`${baseUrl}/`, { signal: AbortSignal.timeout(8000) })
+    .then((r) => r.text())
+    .catch(() => '');
+  const merged = probeHtml || fallback;
+  const nn =
+    merged.match(/var\s+nn\s*=\s*'([^']+)'/)?.[1] || merged.match(/"nn"\s*:\s*"([^"]+)"/)?.[1];
+  const ee = merged.match(/var\s+ee\s*=\s*'([^']+)'/)?.[1];
+  return { ok: true, nn, ee, status: res?.status || entry.status, firmware: entry.hint };
+}
+
+async function postLegacyLogin(baseUrl, password) {
+  const loginPage = await fetchLoginPageLegacy(baseUrl);
+  if (!loginPage.ok) return { ...loginPage, clients: [] };
   const { nn, ee } = loginPage;
   if (!nn) {
     return {
       ok: false,
-      step: 'login_token',
+      step: 'firmware_unrecognized',
       httpStatus: loginPage.status,
-      error: 'Token nn assente nella pagina login (modello/firmware non riconosciuto).',
+      error:
+        'Firmware non riconosciuto: né API Deco (form=keys) né token nn nella pagina HTML.',
+      firmware: loginPage.firmware,
       clients: [],
     };
   }
-  const enc = encryptMercusysPassword(password, nn);
+  mercusysLog('info', 'login legacy AES-nn');
+  const enc = encryptMercusysPasswordLegacy(password, nn);
   const body = new URLSearchParams({
     action: '1',
     username: 'admin',
@@ -100,18 +154,18 @@ async function postLogin(baseUrl, password) {
   } catch {
     return {
       ok: false,
-      step: 'login_response',
+      step: 'legacy_login_response',
       httpStatus: res.status,
-      error: `Risposta login non JSON (HTTP ${res.status}). Anteprima: ${text.slice(0, 120)}`,
+      error: `Login legacy: risposta non JSON (HTTP ${res.status})`,
       clients: [],
     };
   }
   if (json.error || json.result === false) {
     return {
       ok: false,
-      step: 'login_rejected',
+      step: 'password_invalid',
       httpStatus: res.status,
-      error: `Login rifiutato: ${json.error || json.data?.error || 'credenziali o modello errati'}`,
+      error: `Password errata o login rifiutato: ${json.error || 'credenziali errate'}`,
       clients: [],
     };
   }
@@ -119,12 +173,15 @@ async function postLogin(baseUrl, password) {
   if (!stok) {
     return {
       ok: false,
-      step: 'login_stok',
-      httpStatus: res.status,
-      error: 'Login riuscito ma stok mancante nella risposta JSON.',
+      step: 'legacy_login_stok',
+      error: 'Login legacy senza stok',
       clients: [],
     };
   }
+  return await fetchDhcpClientList(baseUrl, stok, 'legacy_luci');
+}
+
+async function fetchDhcpClientList(baseUrl, stok, firmware) {
   const listRes = await fetch(
     `${baseUrl}/cgi-bin/luci/;stok=${stok}/admin/dhcpserver?form=dhcpclient`,
     { signal: AbortSignal.timeout(10000) }
@@ -132,22 +189,55 @@ async function postLogin(baseUrl, password) {
   const listText = await listRes.text();
   try {
     const list = JSON.parse(listText);
-    const rows = list.data?.client_list || list.client_list || [];
-    const clients = rows.map((r) => ({
-      hostname: r.hostname || r.name || '',
-      ip: r.ip || r.ipaddr || '',
-      mac: normalizeMac(r.mac || r.hwaddr || '') || null,
-    }));
-    return { ok: true, clients, stok, step: 'done' };
+    const rows = list.data?.client_list || list.client_list || list.result?.client_list || [];
+    const clients = mapClients(rows);
+    if (!clients.length) {
+      mercusysLog('warn', 'lista client vuota dopo login OK');
+    }
+    return { ok: true, clients, stok, step: 'done', firmware };
   } catch {
     return {
       ok: false,
-      step: 'dhcp_list',
+      step: 'client_list_failed',
       httpStatus: listRes.status,
-      error: `Lista DHCP non JSON (HTTP ${listRes.status}). Anteprima: ${listText.slice(0, 120)}`,
+      error: `Login OK ma lista client non leggibile (HTTP ${listRes.status})`,
       clients: [],
+      firmware,
     };
   }
+}
+
+async function loginAndFetchClients(baseUrl, password) {
+  const entry = await followMetaRefresh(baseUrl);
+  if (!entry.ok) return { ...entry, clients: [] };
+  const probe = await probeDecoFirmware(baseUrl);
+  if (probe.kind === 'deco_luci') {
+    const session = await loginDecoLuci(baseUrl, password);
+    if (!session.ok) return session;
+    const list = await fetchDecoClientList(baseUrl, session);
+    if (list.ok) {
+      const clients = mapClients(list.clients);
+      if (!clients.length) {
+        return {
+          ok: true,
+          clients: [],
+          step: 'done',
+          firmware: 'deco_luci',
+          warning: 'Login OK ma nessun client DHCP connesso',
+        };
+      }
+      return { ok: true, clients, step: 'done', firmware: 'deco_luci' };
+    }
+    mercusysLog('warn', 'client_list deco fallita, provo DHCP', list.error);
+    if (session.stok) {
+      const dhcp = await fetchDhcpClientList(baseUrl, session.stok, 'deco_luci');
+      if (dhcp.ok) return dhcp;
+    }
+    return { ...list, clients: [] };
+  }
+
+  mercusysLog('info', `deco keys non disponibile (kind=${probe.kind}), fallback legacy`);
+  return postLegacyLogin(baseUrl, password);
 }
 
 export async function fetchMercusysClients() {
@@ -179,20 +269,28 @@ export async function fetchMercusysClients() {
     };
   }
   try {
-    const result = await postLogin(url, password);
+    mercusysLog('info', `fetch clients ${url}`);
+    const result = await loginAndFetchClients(url.replace(/\/$/, ''), password);
     if (!result.ok) {
       setMercusysLastError(`${result.step}: ${result.error}`);
+      mercusysLog('error', result.step, result.error);
     } else {
       setMercusysLastError(null);
+      mercusysLog(
+        'info',
+        'import ready',
+        `${result.clients.length} client (${result.firmware || 'unknown'})`
+      );
     }
     return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setMercusysLastError(`network: ${message}`);
+    setMercusysLastError(`router_unreachable: ${message}`);
+    mercusysLog('error', 'router_unreachable', message);
     return {
       ok: false,
-      step: 'network',
-      error: message,
+      step: 'router_unreachable',
+      error: `Router irraggiungibile: ${message}`,
       clients: [],
     };
   }

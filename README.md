@@ -143,7 +143,7 @@ Non committare `data/` né il database di produzione.
 - Seed subnet generiche (10.0.x/24, 192.168.1.0/24, Zigbee) solo se il DB è vuoto.
 - Import **Excel** (fogli `General` / `All` / `Services`) con anteprima; fixture sintetica in `scripts/fixtures/synth-assets.xlsx`.
 - **nmap** (`-sT`, top ports o full) solo su IP privati / FQDN che risolvono in LAN; job in coda (non blocca la UI).
-- **Mercusys** opzionale: `MERCUSYS_URL` + `MERCUSYS_PASSWORD` in `.env` (mai nel repo); se non configurato o API sconosciuta, import manuale/CSV.
+- **Mercusys** opzionale: `MERCUSYS_URL` (o URL da Admin → Import) + `MERCUSYS_PASSWORD` in `.env`. Halo/Deco LuCI: `form=keys`, `form=auth`, login RSA+AES, clienti `admin/client?form=client_list`; fallback legacy AES-nn su pagina HTML. `MERCUSYS_MOCK=1` solo test locali.
 
 ### Docker sul Raspberry Pi
 

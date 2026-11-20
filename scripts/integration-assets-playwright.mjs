@@ -30,6 +30,20 @@ async function main() {
     stdio: 'inherit',
   });
 
+  const MOCK_PORT = await new Promise((res, rej) => {
+    const s = net.createServer();
+    s.listen(0, '127.0.0.1', () => {
+      const p = s.address().port;
+      s.close(() => res(p));
+    });
+    s.on('error', rej);
+  });
+  const mockChild = spawn(process.execPath, ['scripts/fixtures/mercusys-halo-mock.mjs', String(MOCK_PORT)], {
+    cwd: root,
+    stdio: 'ignore',
+  });
+  await sleep(300);
+
   const PORT = await new Promise((res, rej) => {
     const s = net.createServer();
     s.listen(0, '127.0.0.1', () => {
@@ -46,6 +60,8 @@ async function main() {
       ...process.env,
       PORT: String(PORT),
       DATABASE_URL: `file:${path.resolve(dbPath)}`,
+      MERCUSYS_URL: `http://127.0.0.1:${MOCK_PORT}`,
+      MERCUSYS_PASSWORD: 'synth-test',
     },
     stdio: 'ignore',
   });
@@ -128,6 +144,12 @@ async function main() {
   await page.locator('button.assets-tab', { hasText: 'Import' }).click();
   await page.waitForSelector('.assets-mercusys-box');
   await page.screenshot({ path: path.join(ARTIFACTS, 'assets-mercusys-settings-desktop.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Importa client dal router' }).click();
+  await page.waitForSelector('.assets-msg', { hasText: /Importati \d+ client/ }, { timeout: 20000 });
+  await page.screenshot({
+    path: path.join(ARTIFACTS, 'assets-mercusys-import-desktop.png'),
+    fullPage: true,
+  });
 
   const mob = await browser.newContext({
     ...devices['iPhone 12'],
@@ -142,6 +164,7 @@ async function main() {
 
   await browser.close();
   child.kill('SIGTERM');
+  mockChild.kill('SIGTERM');
   console.log('integration-assets-playwright: OK');
 }
 
